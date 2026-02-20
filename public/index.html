@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>多人連線版 射龍門 🐉</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        :root { --table-color: radial-gradient(circle at 50% 40%, #1a5e20 0%, #003300 100%); --gold: #FFD700; --panel-bg: rgba(0, 0, 0, 0.7); }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: #111; display: flex; height: 100vh; overflow: hidden; color: white; position: relative;}
+        
+        #loginOverlay { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        #loginOverlay h1 { font-size: 4.5em; color: var(--gold); text-shadow: 0 0 30px rgba(255,215,0,0.6); margin-bottom: 30px; letter-spacing: 5px;}
+        .login-box { background: rgba(30, 30, 30, 0.8); padding: 40px; border-radius: 20px; border: 1px solid #444; box-shadow: 0 20px 50px rgba(0,0,0,0.9); width: 90%; max-width: 400px; backdrop-filter: blur(10px); }
+        
+        .input-group { margin-bottom: 25px; text-align: left; }
+        .input-group label { display: block; color: #aaa; margin-bottom: 10px; font-size: 0.95em; font-weight: bold; }
+        .login-box input { width: 100%; box-sizing: border-box; padding: 15px; font-size: 1.3em; border-radius: 10px; border: 2px solid #333; background: #0a0a0a; color: white; outline: none; transition: 0.3s; text-align: center; }
+        .login-box input::placeholder { color: #555; }
+        .login-box input:focus { border-color: var(--gold); box-shadow: 0 0 15px rgba(255, 215, 0, 0.2); background: #111;}
+        
+        .login-box button { width: 100%; padding: 15px; font-size: 1.3em; border-radius: 10px; font-weight: bold; border: none; cursor: pointer; transition: 0.2s; }
+        .btn-primary { background: linear-gradient(135deg, #FFD700, #F39C12); color: #000; box-shadow: 0 4px 15px rgba(243, 156, 18, 0.4); }
+        .btn-primary:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(243, 156, 18, 0.6); filter: brightness(1.1); }
+        
+        .divider-text { color: #777; font-size: 0.9em; margin: 25px 0; position: relative; display: flex; align-items: center; justify-content: center; font-weight: bold;}
+        .divider-text::before, .divider-text::after { content: ""; flex: 1; height: 1px; background: #444; margin: 0 15px; }
+        
+        .join-group { background: rgba(0,0,0,0.4); padding: 25px; border-radius: 15px; border: 1px solid #333; }
+        .btn-secondary { background: linear-gradient(135deg, #2980b9, #34495e); color: white; box-shadow: 0 4px 15px rgba(41, 128, 185, 0.4); }
+        .btn-secondary:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(41, 128, 185, 0.6); filter: brightness(1.2); }
+        #roomCodeInput { letter-spacing: 10px; font-weight: bold; color: var(--gold); }
+
+        #setupOverlay { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.95); z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .setup-group { margin: 15px 0; }
+        .setup-group label { color: #ccc; font-size: 1.2em; display: block; margin-bottom: 5px;}
+        #setupControls input { font-size: 1.5em; padding: 10px; border-radius: 8px; border: 2px solid var(--gold); background: #111; color: var(--gold); text-align: center; width: 220px; outline: none;}
+        #setupControls button { font-size: 1.2em; padding: 12px 30px; cursor: pointer; border-radius: 8px; font-weight: bold; border: none; background: linear-gradient(135deg, #FFD700, #F39C12); color: black; margin-top: 15px;}
+        
+        .host-reset-btn { position: absolute; top: 15px; left: 15px; background: linear-gradient(135deg, #c0392b, #e74c3c); color: white; border: 2px solid #fff; padding: 10px 15px; font-size: 1em; border-radius: 8px; cursor: pointer; z-index: 2000; display: none; }
+        .end-game-btn { position: absolute; top: 15px; right: 15px; background: linear-gradient(135deg, #8e44ad, #9b59b6); color: white; border: 2px solid #fff; padding: 10px 15px; font-size: 1em; border-radius: 8px; cursor: pointer; z-index: 2000; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: none; }
+
+        .sidebar { width: 300px; background: #111; border-right: 2px solid #333; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; margin-top: 50px; }
+        .room-tag { background: rgba(255,215,0,0.1); border: 1px solid var(--gold); color: var(--gold); padding: 8px 10px; border-radius: 8px; font-size: 1.3em; text-align: center; margin-bottom: 20px; font-weight: bold; letter-spacing: 2px;}
+        .sidebar h2 { color: white; text-align: center; border-bottom: 1px solid #555; padding-bottom: 10px; margin-top: 0; font-size: 1.2em;}
+        .player-list { flex-grow: 1; overflow-y: auto; }
+        .player-item { display: flex; align-items: center; justify-content: space-between; padding: 15px 10px; border-bottom: 1px solid #333; font-size: 1.2em; transition: 0.3s; }
+        .active-turn { background: rgba(255, 215, 0, 0.2); border-left: 5px solid var(--gold); }
+        .pnl-positive { color: #00E676; font-weight: bold; }
+        .pnl-negative { color: #FF1744; font-weight: bold; }
+
+        .main-game { flex-grow: 1; padding: 20px; display: flex; justify-content: center; align-items: center; }
+        .casino-table { width: 100%; max-width: 1200px; height: 90%; background: var(--table-color); border-radius: 100px; box-shadow: inset 0 0 50px rgba(0,0,0,0.8), 0 0 0 15px #3e2723; display: flex; flex-direction: column; justify-content: space-between; padding: 40px; box-sizing: border-box; }
+        
+        .top-panel { display: flex; justify-content: space-between; }
+        .pool-box, .deck-info { background: var(--panel-bg); border: 2px solid var(--gold); border-radius: 15px; padding: 15px 30px; text-align: center; }
+        .pool-amount { font-size: 3em; color: var(--gold); font-weight: bold; }
+        
+        .center-board { display: flex; justify-content: center; gap: 40px; perspective: 1200px; }
+        .card { width: 120px; height: 180px; position: relative; transform-style: preserve-3d; transition: transform 0.6s; border-radius: 10px; box-shadow: 0 10px 20px rgba(0,0,0,0.5); }
+        .card.flipped { transform: rotateY(180deg); }
+        .card-face { width: 100%; height: 100%; position: absolute; backface-visibility: hidden; border-radius: 10px; background: white; border: 1px solid #ccc; display: flex; flex-direction: column; padding: 10px; box-sizing: border-box; color: black;}
+        .card-back { background: repeating-linear-gradient(45deg, #0d47a1, #0d47a1 10px, #1565c0 10px, #1565c0 20px); transform: rotateY(0deg); border: 4px solid white;}
+        .card-front { transform: rotateY(180deg); }
+        .red-suit { color: #d32f2f; }
+        .card-val { font-size: 24px; font-weight: bold; line-height: 1; }
+        .card-suit { font-size: 50px; text-align: center; flex-grow: 1; display: flex; align-items: center; justify-content: center; }
+
+        .bottom-panel { background: var(--panel-bg); border-radius: 15px; padding: 20px; text-align: center; min-height: 120px; display: flex; flex-direction: column; justify-content: center;}
+        #resultMsg { font-size: 1.8em; font-weight: bold; margin-bottom: 15px; }
+        .controls { display: flex; gap: 15px; justify-content: center; align-items: center; }
+        .btn-shoot { background: #00C853; color: white; border:none; padding: 15px 30px; border-radius:8px; font-size:1.2em; font-weight:bold; cursor:pointer;}
+        .btn-pass { background: #546E7A; color: white; border:none; padding: 15px 30px; border-radius:8px; font-size:1.2em; font-weight:bold; cursor:pointer;}
+        .btn-danger { background: #D50000; color: white; border:none; padding: 15px 30px; border-radius:8px; font-size:1.2em; font-weight:bold; cursor:pointer;}
+
+        #resultOverlay { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.95); z-index: 3000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .leaderboard-container { width: 90%; max-width: 600px; background: #222; border-radius: 15px; padding: 20px; border: 2px solid var(--gold); box-shadow: 0 0 30px rgba(255,215,0,0.3); max-height: 60vh; overflow-y: auto; }
+        .leaderboard-item { display: flex; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid #444; font-size: 1.8em; align-items: center; }
+        .medal-icon { font-size: 1.2em; margin-right: 15px; }
+    </style>
+</head>
+<body>
+
+    <button id="hostResetBtn" class="host-reset-btn" onclick="forceReset()">🛑 強制重置包廂</button>
+    <button id="endGameBtn" class="end-game-btn" onclick="endGame()">🏆 結束牌局並結算</button>
+
+    <div id="loginOverlay">
+        <h1>🐉 射龍門 大廳 🐉</h1>
+        <div class="login-box">
+            <div class="input-group">
+                <label>📍 第一步：輸入你的遊戲暱稱</label>
+                <input type="text" id="playerName" placeholder="例如：賭神高進" maxlength="10">
+            </div>
+            <button class="btn-primary" onclick="createRoom()">👑 創建專屬新包廂</button>
+            <div class="divider-text">或者</div>
+            <div class="join-group">
+                <div class="input-group" style="margin-bottom: 15px;">
+                    <label>📍 第二步：加入朋友的牌局</label>
+                    <input type="text" id="roomCodeInput" placeholder="輸入 4 碼房號" maxlength="4">
+                </div>
+                <button class="btn-secondary" onclick="joinRoom()">🚪 加入包廂</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="setupOverlay" style="display:none;">
+        <h1 id="setupTitle">設定包廂規則</h1>
+        <div id="setupControls">
+            <div class="setup-group">
+                <label>包廂人數 (達標自動開局)：</label>
+                <input type="number" id="maxPlayersInput" value="4" min="2" step="1">
+            </div>
+            <div class="setup-group">
+                <label>初始總彩池：</label>
+                <input type="number" id="initPoolInput" value="2000" min="100" step="100">
+            </div>
+            <div class="setup-group">
+                <label>PASS 過路費 (0為免費)：</label>
+                <input type="number" id="passFeeInput" value="0" min="0" step="10">
+            </div>
+            <button onclick="setPool()">確認設定並等待玩家</button>
+        </div>
+    </div>
+
+    <div id="resultOverlay" style="display:none;">
+        <h1 style="font-size: 4em; margin-bottom: 10px;">🏆 最終結算 🏆</h1>
+        <h2 style="color: #aaa; margin-bottom: 30px;">剩餘彩池: <span id="finalPoolAmount" style="color:var(--gold);">已結算</span></h2>
+        <div class="leaderboard-container" id="leaderboardList"></div>
+        <button onclick="closeResult()" style="margin-top: 30px; font-size: 1.2em; padding: 12px 30px; border-radius: 8px; cursor: pointer; background: #555; color: white; border: none;">關閉結算面板</button>
+    </div>
+
+    <div class="sidebar">
+        <div class="room-tag">包廂號碼：<span id="displayRoomId">----</span></div>
+        <h2>玩家順序與盈虧</h2>
+        <div class="player-list" id="playerList"></div>
+    </div>
+
+    <div class="main-game">
+        <div class="casino-table">
+            <div class="top-panel">
+                <div class="pool-box">
+                    <div style="color:#aaa;">Total Pool</div>
+                    <div class="pool-amount">$<span id="poolAmount">0</span></div>
+                </div>
+                <div class="deck-info">
+                    <div style="color:#aaa;">牌庫剩餘</div>
+                    <div class="pool-amount"><span id="cardsLeft">104</span></div>
+                </div>
+            </div>
+
+            <div class="center-board">
+                <div class="card" id="card1"><div class="card-face card-back"></div><div class="card-face card-front" id="c1-front"></div></div>
+                <div class="card" id="card3" style="margin-top:-30px;"><div class="card-face card-back"></div><div class="card-face card-front" id="c3-front"></div></div>
+                <div class="card" id="card2"><div class="card-face card-back"></div><div class="card-face card-front" id="c2-front"></div></div>
+            </div>
+
+            <div class="bottom-panel">
+                <div id="resultMsg">等待開局...</div>
+                
+                <div class="controls" id="actionArea" style="display:none;">
+                    <input type="number" id="betAmount" placeholder="籌碼..." min="10" step="10" style="width:150px; font-size:1.5em; text-align:center; border-radius:8px; outline:none; border:2px solid var(--gold); background:#222; color:var(--gold);">
+                    <div id="normalAction" style="display:flex; gap:10px;">
+                        <button class="btn-shoot" onclick="shoot('normal')">🚀 射門</button>
+                        <button class="btn-pass" onclick="passRound()">💨 PASS</button>
+                    </div>
+                    <div id="pairAction" style="display:none; gap:10px;">
+                        <button class="btn-danger" onclick="shoot('high')">🔼 猜大</button>
+                        <button class="btn-danger" onclick="shoot('low')">🔽 猜小</button>
+                        <button class="btn-pass" onclick="passRound()">💨 PASS</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let myName = "";
+        let isMyTurn = false;
+        let currentRoomId = "";
+
+        // ==========================================
+        // 🎵 內建 8-bit 電子賭場音效引擎 (Web Audio API)
+        // ==========================================
+        let audioCtx;
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playTone(freq, type, duration, vol=0.1) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        const sfx = {
+            card: () => playTone(400, 'square', 0.1, 0.03), // 短促發牌聲
+            win: () => { 
+                playTone(440, 'sine', 0.1, 0.1); 
+                setTimeout(()=>playTone(554, 'sine', 0.1, 0.1), 100); 
+                setTimeout(()=>playTone(659, 'sine', 0.3, 0.1), 200); 
+            }, // 贏錢：歡樂三連音
+            lose: () => { 
+                playTone(300, 'sawtooth', 0.2, 0.1); 
+                setTimeout(()=>playTone(280, 'sawtooth', 0.2, 0.1), 200); 
+                setTimeout(()=>playTone(260, 'sawtooth', 0.4, 0.1), 400); 
+            }, // 輸錢：哀傷下樓梯
+            hit: () => { 
+                playTone(150, 'square', 0.3, 0.2); 
+                setTimeout(()=>playTone(100, 'square', 0.5, 0.2), 150); 
+            }, // 撞柱：低音錯誤警報
+            coin: () => {
+                playTone(1200, 'sine', 0.1, 0.1);
+                setTimeout(()=>playTone(1600, 'sine', 0.3, 0.1), 100);
+            } // 金幣補血聲
+        };
+        // ==========================================
+
+        function getPlayerName() {
+            initAudio(); // 確保瀏覽器解鎖音效權限
+            let name = document.getElementById('playerName').value.trim();
+            if (!name) alert("請輸入暱稱！");
+            return name;
+        }
+
+        function createRoom() {
+            myName = getPlayerName();
+            if (!myName) return;
+            socket.emit('create_room', myName);
+        }
+
+        function joinRoom() {
+            myName = getPlayerName();
+            if (!myName) return;
+            let roomId = document.getElementById('roomCodeInput').value.trim();
+            if (roomId.length !== 4) return alert("請輸入 4 碼包廂號！");
+            socket.emit('join_room', { playerName: myName, roomId: roomId });
+        }
+
+        socket.on('room_joined', (roomId) => {
+            currentRoomId = roomId;
+            document.getElementById('displayRoomId').innerText = roomId;
+            document.getElementById('loginOverlay').style.display = 'none';
+        });
+
+        socket.on('error_msg', (msg) => { alert(msg); });
+
+        function setPool() {
+            initAudio();
+            let amount = parseInt(document.getElementById('initPoolInput').value);
+            let passFee = parseInt(document.getElementById('passFeeInput').value);
+            let maxPlayers = parseInt(document.getElementById('maxPlayersInput').value);
+            
+            if(isNaN(amount) || amount <= 0) return alert("彩池金額無效！");
+            if(isNaN(maxPlayers) || maxPlayers < 2) return alert("遊戲至少需要 2 人！");
+            if(isNaN(passFee) || passFee < 0) passFee = 0;
+            
+            socket.emit('set_pool', { amount, passFee, maxPlayers });
+        }
+
+        function forceReset() {
+            initAudio();
+            if(confirm("確定要強制中斷目前牌局，並讓所有人重新設定嗎？")) {
+                socket.emit('force_reset');
+            }
+        }
+
+        function endGame() {
+            initAudio();
+            if(confirm("確定要終止牌局，並將剩餘彩池均分給大家進行結算嗎？")) {
+                socket.emit('end_game');
+            }
+        }
+        
+        function closeResult() {
+            document.getElementById('resultOverlay').style.display = 'none';
+        }
+
+        function renderCard(cardObj, elementId) {
+            if (!cardObj) return;
+            const colorClass = (cardObj.suit === '♥' || cardObj.suit === '♦') ? 'red-suit' : '';
+            const faces = {1:'A', 11:'J', 12:'Q', 13:'K'};
+            const displayVal = faces[cardObj.value] || cardObj.value;
+            document.getElementById(elementId).innerHTML = `
+                <div class="card-val ${colorClass}">${displayVal} ${cardObj.suit}</div>
+                <div class="card-suit ${colorClass}">${cardObj.suit}</div>
+            `;
+        }
+
+        function updatePlayerList(state) {
+            let listHtml = '';
+            state.playerOrder.forEach((id, index) => {
+                let p = state.players[id];
+                let isCurrentTurn = (index === state.currentTurnIndex && state.status === 'playing');
+                let rowClass = isCurrentTurn ? 'player-item active-turn' : 'player-item';
+                let turnMarker = isCurrentTurn ? '👉 ' : '';
+                let hostMarker = p.isHost ? '👑 ' : '';
+                let pnlClass = p.pnl > 0 ? 'pnl-positive' : (p.pnl < 0 ? 'pnl-negative' : '');
+                let pnlSign = p.pnl > 0 ? '+' : '';
+                
+                listHtml += `<div class="${rowClass}">
+                    <span>${turnMarker}${hostMarker}${p.name} ${id === socket.id ? '(你)' : ''}</span> 
+                    <span class="${pnlClass}">${pnlSign}${p.pnl}</span>
+                </div>`;
+            });
+            document.getElementById('playerList').innerHTML = listHtml;
+            isMyTurn = (socket.id === state.playerOrder[state.currentTurnIndex]);
+        }
+
+        socket.on('update_state', (state) => {
+            document.getElementById('poolAmount').innerText = state.pool;
+            document.getElementById('cardsLeft').innerText = state.deck.length;
+            updatePlayerList(state);
+
+            let passButtons = document.querySelectorAll('.btn-pass');
+            passButtons.forEach(btn => {
+                btn.innerText = state.passFee > 0 ? `💨 PASS (-$${state.passFee})` : `💨 PASS`;
+            });
+
+            let isHost = (state.playerOrder.length > 0 && state.playerOrder[0] === socket.id);
+            document.getElementById('hostResetBtn').style.display = isHost ? 'block' : 'none';
+            document.getElementById('endGameBtn').style.display = (isHost && state.status === 'playing') ? 'block' : 'none';
+
+            let setupOverlay = document.getElementById('setupOverlay');
+            
+            if (state.status === 'waiting_for_host') {
+                setupOverlay.style.display = 'flex';
+                document.getElementById('actionArea').style.display = 'none'; 
+                ['card1', 'card2', 'card3'].forEach(id => document.getElementById(id).classList.remove('flipped'));
+
+                if (isHost) {
+                    document.getElementById('setupTitle').innerText = state.pool === 0 ? "新的一局！請室長重新設定" : "你是室長，請設定遊戲規則";
+                    document.getElementById('setupControls').style.display = 'block';
+                } else {
+                    document.getElementById('setupTitle').innerText = "等待室長設定規則中 ⏳...";
+                    document.getElementById('setupControls').style.display = 'none';
+                }
+            } else if (state.status === 'waiting_for_players') {
+                setupOverlay.style.display = 'flex';
+                document.getElementById('actionArea').style.display = 'none'; 
+                document.getElementById('setupTitle').innerHTML = state.message + `<br><br><div style="color:var(--gold); font-size: 1.2em; border: 3px dashed var(--gold); padding: 15px 40px; border-radius: 15px; display: inline-block; letter-spacing: 10px; background: rgba(0,0,0,0.5);">包廂號碼：${currentRoomId}</div>`;
+                document.getElementById('setupControls').style.display = 'none';
+            } else {
+                setupOverlay.style.display = 'none';
+            }
+
+            let msgEl = document.getElementById('resultMsg');
+            msgEl.innerText = state.message;
+            msgEl.style.color = state.messageColor;
+        });
+
+        socket.on('auto_replenish', (state) => {
+            updatePlayerList(state);
+            document.getElementById('poolAmount').innerText = state.pool;
+            let msgEl = document.getElementById('resultMsg');
+            msgEl.innerText = state.message;
+            msgEl.style.color = state.messageColor;
+
+            sfx.coin(); // 🎵 播放補血金幣音效
+            confetti({ particleCount: 150, spread: 100, origin: { y: 0 }, colors: ['#FFD700', '#F39C12', '#F1C40F'], zIndex: 9999 });
+        });
+
+        socket.on('cards_dealt', (state) => {
+            updatePlayerList(state); 
+            document.getElementById('poolAmount').innerText = state.pool;
+            document.getElementById('cardsLeft').innerText = state.deck.length;
+
+            ['card1', 'card2', 'card3'].forEach(id => document.getElementById(id).classList.remove('flipped'));
+            
+            setTimeout(() => {
+                renderCard(state.tableCards.c1, 'c1-front');
+                renderCard(state.tableCards.c2, 'c2-front');
+                document.getElementById('c3-front').innerHTML = ''; 
+
+                document.getElementById('card1').classList.add('flipped');
+                sfx.card(); // 🎵 播放第一張發牌音效
+
+                setTimeout(() => {
+                    document.getElementById('card2').classList.add('flipped');
+                    sfx.card(); // 🎵 播放第二張發牌音效
+                }, 300);
+            }, 300);
+
+            setTimeout(() => {
+                let msgEl = document.getElementById('resultMsg');
+                msgEl.innerText = state.message;
+                msgEl.style.color = state.messageColor;
+
+                if (isMyTurn) {
+                    document.getElementById('betAmount').value = '';
+                    document.getElementById('actionArea').style.display = 'flex';
+                    document.getElementById('normalAction').style.display = state.isPair ? 'none' : 'flex';
+                    document.getElementById('pairAction').style.display = state.isPair ? 'flex' : 'none';
+                }
+            }, 1000);
+        });
+
+        socket.on('shoot_result', (data) => {
+            document.getElementById('actionArea').style.display = 'none'; 
+            
+            updatePlayerList(data.state);
+            document.getElementById('poolAmount').innerText = data.state.pool;
+
+            let msgEl = document.getElementById('resultMsg');
+            msgEl.innerText = data.state.message;
+            msgEl.style.color = data.state.messageColor;
+
+            renderCard(data.state.tableCards.c3, 'c3-front');
+            document.getElementById('card3').classList.add('flipped');
+            sfx.card(); // 🎵 播放第三張發牌音效
+
+            // 🎵 根據結果播放對應的勝利、失敗或撞柱音效
+            setTimeout(() => {
+                if (data.state.message.includes('撞柱')) {
+                    sfx.hit();
+                } else if (data.resultType === 'win') {
+                    sfx.win();
+                    confetti({ particleCount: 150, spread: 80, origin: { y: 0.5 }});
+                } else {
+                    sfx.lose();
+                }
+            }, 400); // 稍微延遲讓牌先翻開
+        });
+
+        socket.on('game_ended', (data) => {
+            document.getElementById('resultOverlay').style.display = 'flex';
+            document.getElementById('finalPoolAmount').innerText = `已均分給大家 (每人 +$${data.distributedShare})`;
+            
+            let listHtml = '';
+            data.leaderboard.forEach((p, index) => {
+                let medal = '';
+                if (index === 0) medal = '🥇';
+                else if (index === 1) medal = '🥈';
+                else if (index === 2) medal = '🥉';
+                else medal = `[${index + 1}]`;
+                
+                let pnlClass = p.pnl > 0 ? 'pnl-positive' : (p.pnl < 0 ? 'pnl-negative' : '');
+                let pnlSign = p.pnl > 0 ? '+' : '';
+                
+                listHtml += `
+                <div class="leaderboard-item">
+                    <span><span class="medal-icon">${medal}</span>${p.name}</span>
+                    <span class="${pnlClass}">${pnlSign}${p.pnl}</span>
+                </div>`;
+            });
+            
+            document.getElementById('leaderboardList').innerHTML = listHtml;
+            
+            sfx.win(); // 🎵 播放結算勝利音效
+            confetti({ particleCount: 400, spread: 150, origin: { y: 0.3 }, zIndex: 4000 });
+        });
+
+        function shoot(guessType) {
+            initAudio();
+            let bet = parseInt(document.getElementById('betAmount').value);
+            let currentPool = parseInt(document.getElementById('poolAmount').innerText);
+            
+            if(isNaN(bet) || bet <= 0) return alert("請輸入有效籌碼！");
+            if(bet > currentPool) return alert(`下注金額不能超過目前彩池 ($${currentPool})！`);
+            
+            socket.emit('shoot', { bet, guessType });
+        }
+        
+        function passRound() { 
+            initAudio();
+            socket.emit('pass'); 
+        }
+    </script>
+</body>
+</html>
