@@ -381,7 +381,7 @@ io.on('connection', (socket) => {
         let isBankrupt = false;
         if (state.pool <= 0) {
             state.pool = 0;
-            state.message += " 🚨 彩池破產！";
+            state.message += " 🚨 彩池沒了！";
             state.messageColor = "#F5D061";
             isBankrupt = true;
         }
