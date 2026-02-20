@@ -201,7 +201,7 @@
                     <div class="pool-amount">$<span id="poolAmount">0</span></div>
                 </div>
                 <div class="deck-info">
-                    <div style="color:#aaa; font-size: 0.8em;">牌靴剩餘</div>
+                    <div style="color:#aaa; font-size: 0.8em;">牌庫剩餘</div>
                     <div class="pool-amount"><span id="cardsLeft">104</span></div>
                 </div>
             </div>
@@ -239,54 +239,56 @@
         let currentPassFee = 0; 
 
         // ==========================================
-        // 🎵 加強版防彈音效引擎 (try-catch 絕對不當機)
+        // 🎵 地毯式強制音效解鎖引擎 (針對極端 iOS)
         // ==========================================
         let audioCtx = null;
-        let audioUnlocked = false;
-
-        function initAudio() {
-            try {
-                if (!audioCtx) {
+        
+        function getAudioContext() {
+            if (!audioCtx) {
+                try {
                     const AudioContext = window.AudioContext || window.webkitAudioContext;
                     if(AudioContext) audioCtx = new AudioContext();
-                }
-            } catch(e) { console.warn("瀏覽器不支援 Web Audio API", e); }
+                } catch(e) { console.warn("音效引擎建立失敗", e); }
+            }
+            return audioCtx;
         }
 
         function unlockAudio() {
-            if(audioUnlocked) return;
+            const ctx = getAudioContext();
+            if(!ctx) return;
+            if (ctx.state === 'suspended') {
+                ctx.resume();
+            }
+            // 播放無聲音頻來強制解鎖
             try {
-                initAudio();
-                if(!audioCtx) return;
-                if(audioCtx.state === 'suspended') audioCtx.resume();
-                
-                const buffer = audioCtx.createBuffer(1, 1, 22050);
-                const source = audioCtx.createBufferSource();
+                const buffer = ctx.createBuffer(1, 1, 22050);
+                const source = ctx.createBufferSource();
                 source.buffer = buffer;
-                source.connect(audioCtx.destination);
+                source.connect(ctx.destination);
                 source.start(0);
-                
-                audioUnlocked = true;
-            } catch(e) { console.warn("音效解鎖失敗，已忽略", e); }
+            } catch(e){}
         }
 
-        // 綁定所有點擊與觸控事件，提早解鎖
-        document.body.addEventListener('click', unlockAudio, { once: true });
-        document.body.addEventListener('touchstart', unlockAudio, { once: true });
+        // 綁定所有可能的手勢與點擊，無死角解鎖！
+        ['touchstart', 'touchend', 'click', 'keydown'].forEach(evt => {
+            document.body.addEventListener(evt, unlockAudio, { capture: true });
+        });
 
         function playTone(freq, type, duration, vol=0.1) {
+            const ctx = getAudioContext();
+            if(!ctx) return;
+            if(ctx.state === 'suspended') ctx.resume();
             try {
-                if (!audioCtx || audioCtx.state !== 'running') return;
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
                 osc.type = type;
-                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.frequency.setValueAtTime(freq, ctx.currentTime);
+                gain.gain.setValueAtTime(vol, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
                 osc.connect(gain);
-                gain.connect(audioCtx.destination);
+                gain.connect(ctx.destination);
                 osc.start();
-                osc.stop(audioCtx.currentTime + duration);
+                osc.stop(ctx.currentTime + duration);
             } catch(e) {}
         }
 
@@ -316,11 +318,9 @@
                 }
             }
         };
-
         // ==========================================
 
         function getPlayerName() {
-            unlockAudio();
             let name = document.getElementById('playerName').value.trim();
             if (!name) alert("請輸入暱稱！");
             return name;
@@ -349,7 +349,6 @@
         socket.on('error_msg', (msg) => { alert(msg); });
 
         function setPool() {
-            unlockAudio();
             let amount = parseInt(document.getElementById('initPoolInput').value);
             let passFee = parseInt(document.getElementById('passFeeInput').value);
             let maxPlayers = parseInt(document.getElementById('maxPlayersInput').value);
@@ -364,15 +363,13 @@
         }
 
         function forceReset() {
-            unlockAudio();
             if(confirm("確定要強制中斷目前牌局，並讓所有人重新設定嗎？")) {
                 socket.emit('force_reset');
             }
         }
 
         function endGame() {
-            unlockAudio();
-            if(confirm("確定要終止牌局，並將剩餘彩池均分給大家進行結算嗎？")) {
+            if(confirm("確定要終止牌局，並將剩餘彩池均分給大家進行結算嗎？(包含已斷線玩家的資料也會一併結算)")) {
                 socket.emit('end_game');
             }
         }
@@ -545,7 +542,7 @@
 
         socket.on('game_ended', (data) => {
             document.getElementById('resultOverlay').style.display = 'flex';
-            document.getElementById('finalPoolAmount').innerText = `已均分 (每人 +$${data.distributedShare})`;
+            document.getElementById('finalPoolAmount').innerText = `已均分 (每人在線玩家 +$${data.distributedShare})`;
             
             let listHtml = '';
             data.leaderboard.forEach((p, index) => {
@@ -558,8 +555,12 @@
                 let pnlClass = p.pnl > 0 ? 'pnl-positive' : (p.pnl < 0 ? 'pnl-negative' : '');
                 let pnlSign = p.pnl > 0 ? '+' : '';
                 
+                // 如果是斷線玩家，名字會自帶 (已離線) 標記，並套用灰色字體顯示
+                let isOffline = p.name.includes('(已離線)');
+                let nameStyle = isOffline ? 'color: #777;' : '';
+                
                 listHtml += `
-                <div class="leaderboard-item">
+                <div class="leaderboard-item" style="${nameStyle}">
                     <span><span class="medal-icon">${medal}</span>${p.name}</span>
                     <span class="${pnlClass}">${pnlSign}${p.pnl}</span>
                 </div>`;
@@ -572,7 +573,6 @@
         });
 
         function shoot(guessType) {
-            unlockAudio();
             let bet = parseInt(document.getElementById('betAmount').value);
             let currentPool = parseInt(document.getElementById('poolAmount').innerText);
             
@@ -585,7 +585,6 @@
         }
         
         function passRound() { 
-            unlockAudio();
             socket.emit('pass'); 
         }
     </script>

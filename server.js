@@ -26,10 +26,11 @@ function createInitialGameState() {
         initialPool: 2000,
         passFee: 0,
         maxPlayers: 0, 
-        numberOfDecks: 2, // 新增：預設 2 副牌
+        numberOfDecks: 2, 
         deck: [],
         players: {}, 
         playerOrder: [], 
+        offlinePlayers: [], // 🚀 新增：保存斷線玩家的資料與盈虧
         currentTurnIndex: 0, 
         tableCards: { c1: null, c2: null, c3: null },
         isPair: false,
@@ -60,7 +61,6 @@ function drawCard(roomId) {
     return state.deck.pop();
 }
 
-// 將發牌邏輯獨立出來
 function executeDeal(roomId) {
     let state = rooms[roomId];
     if(!state) return;
@@ -82,7 +82,6 @@ function executeDeal(roomId) {
     io.to(roomId).emit('cards_dealt', state); 
 }
 
-// 帶入洗牌動畫判斷
 function dealInitialCardsForCurrentTurn(roomId) {
     let state = rooms[roomId];
     if(!state) return;
@@ -91,12 +90,12 @@ function dealInitialCardsForCurrentTurn(roomId) {
         state.message = "🃏 牌靴見底了，莊家重新洗牌中...";
         state.messageColor = "#FFD700";
         io.to(roomId).emit('update_state', state); 
-        io.to(roomId).emit('shuffling_deck'); // 觸發前端洗牌動畫
+        io.to(roomId).emit('shuffling_deck'); 
         
         setTimeout(() => {
             initDeck(roomId);
             executeDeal(roomId);
-        }, 3000); // 停頓 3 秒讓大家看洗牌
+        }, 3000); 
     } else {
         executeDeal(roomId);
     }
@@ -115,7 +114,7 @@ function startGame(roomId) {
     state.status = 'playing';
     initDeck(roomId);
     
-    let costPerPlayer = Math.round(state.initialPool / state.playerOrder.length);
+    let costPerPlayer = Math.round(state.initialPool / state.maxPlayers); // 依照最大人數均攤
     for (let id in state.players) {
         state.players[id].pnl -= costPerPlayer;
     }
@@ -144,6 +143,7 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('update_state', state);
     });
 
+    // 🚀 加入房間邏輯大幅升級 🚀
     socket.on('join_room', (data) => {
         let { playerName, roomId } = data;
         roomId = roomId.toUpperCase();
@@ -153,14 +153,42 @@ io.on('connection', (socket) => {
         }
         
         let state = rooms[roomId];
-        if (state.status === 'playing' || (state.maxPlayers > 0 && state.playerOrder.length >= state.maxPlayers)) {
-            return socket.emit('error_msg', "這個包廂已經客滿或遊戲已經開始了！");
+        
+        // 判斷是否客滿
+        if (state.maxPlayers > 0 && state.playerOrder.length >= state.maxPlayers) {
+            return socket.emit('error_msg', "這個包廂已經客滿了！");
+        }
+
+        // 判斷在線玩家中是否有同名的 (防止自己開兩個分頁)
+        let isNameTaken = Object.values(state.players).some(p => p.name === playerName);
+        if (isNameTaken) {
+             return socket.emit('error_msg', "包廂內已經有同名玩家，請換個名字！");
         }
 
         socket.join(roomId);
         socket.roomId = roomId;
 
-        state.players[socket.id] = { name: playerName, pnl: 0, isHost: false };
+        // 🚀 尋找是否為「斷線玩家重新連線」
+        let offlineIdx = state.offlinePlayers.findIndex(p => p.name === playerName);
+        
+        if (offlineIdx !== -1) {
+            // 從離線區拉回來，恢復盈虧！
+            let restoredPlayer = state.offlinePlayers.splice(offlineIdx, 1)[0];
+            restoredPlayer.isHost = false; // 恢復身分但不給室長權限
+            state.players[socket.id] = restoredPlayer;
+            state.message = `🔥 ${playerName} 斷線重連，帶著他的籌碼回歸了！`;
+        } else {
+            // 全新玩家加入
+            state.players[socket.id] = { name: playerName, pnl: 0, isHost: false };
+            
+            // 如果遊戲已經在進行中，新來的必須補繳一開始的門票費！
+            if (state.status === 'playing') {
+                let costPerPlayer = Math.round(state.initialPool / state.maxPlayers);
+                state.players[socket.id].pnl -= costPerPlayer;
+                state.message = `👋 ${playerName} 中途加入牌局！已扣除門票 $${costPerPlayer}`;
+            }
+        }
+
         state.playerOrder.push(socket.id);
 
         if (state.status === 'waiting_for_host') {
@@ -189,7 +217,7 @@ io.on('connection', (socket) => {
         state.pool = data.amount;
         state.passFee = data.passFee || 0;
         state.maxPlayers = data.maxPlayers || 2; 
-        state.numberOfDecks = data.decks || 2; // 儲存副牌數量
+        state.numberOfDecks = data.decks || 2; 
         
         if (state.playerOrder.length >= state.maxPlayers) {
             startGame(roomId);
@@ -210,6 +238,7 @@ io.on('connection', (socket) => {
         state.pool = 0;
         state.status = 'waiting_for_host'; 
         state.tableCards = { c1: null, c2: null, c3: null };
+        state.offlinePlayers = []; // 重置時清空離線紀錄
         state.message = "🛑 莊家已強制重置遊戲！請重新設定人數與彩池。";
         state.messageColor = "#FFD700";
         initDeck(roomId); 
@@ -220,6 +249,7 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('update_state', state);
     });
 
+    // 🚀 結算邏輯升級：把逃跑的玩家抓回來算帳 🚀
     socket.on('end_game', () => {
         let roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -228,7 +258,7 @@ io.on('connection', (socket) => {
         if (socket.id !== state.playerOrder[0]) return; 
         state.status = 'game_over';
         
-        let playerCount = state.playerOrder.length;
+        let playerCount = state.playerOrder.length; // 剩下的彩池只分給還在線上的活人
         let distributedShare = 0;
 
         if (playerCount > 0 && state.pool > 0) {
@@ -240,13 +270,21 @@ io.on('connection', (socket) => {
         }
 
         let leaderboard = [];
+        // 加入在線玩家
         for (let id in state.players) {
             leaderboard.push(state.players[id]);
         }
+        // 加入已斷線玩家 (加上標記)
+        for (let p of state.offlinePlayers) {
+            p.name = p.name + " (已離線)";
+            leaderboard.push(p);
+        }
+        
         leaderboard.sort((a, b) => b.pnl - a.pnl);
 
         io.to(roomId).emit('game_ended', { leaderboard: leaderboard, distributedShare: distributedShare });
         state.status = 'waiting_for_host';
+        state.offlinePlayers = []; // 結算後清空離線名單
     });
 
     socket.on('shoot', (data) => {
@@ -259,7 +297,6 @@ io.on('connection', (socket) => {
         let { bet, guessType } = data;
         let player = state.players[socket.id];
         
-        // 嚴格阻擋作弊：最低下注不能低於過路費
         let minBet = Math.min(state.pool, state.passFee > 0 ? state.passFee : 10);
         if (typeof bet !== 'number' || bet < minBet) return;
         if (bet > state.pool) bet = state.pool; 
@@ -306,7 +343,7 @@ io.on('connection', (socket) => {
         let isBankrupt = false;
         if (state.pool <= 0) {
             state.pool = 0;
-            state.message += " 🚨 彩池破產！";
+            state.message += " 🚨 彩池沒了！";
             state.messageColor = "#FFD700";
             isBankrupt = true;
         }
@@ -318,7 +355,7 @@ io.on('connection', (socket) => {
         } else {
             setTimeout(() => {
                 state.pool = state.initialPool;
-                let costPerPlayer = Math.round(state.initialPool / state.playerOrder.length);
+                let costPerPlayer = Math.round(state.initialPool / state.maxPlayers);
                 for (let id in state.players) {
                     state.players[id].pnl -= costPerPlayer; 
                 }
@@ -358,6 +395,7 @@ io.on('connection', (socket) => {
         setTimeout(() => { nextTurn(roomId); }, 3000); 
     });
 
+    // 🚀 斷線邏輯升級：保留玩家紀錄 🚀
     socket.on('disconnect', () => {
         let roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -367,6 +405,12 @@ io.on('connection', (socket) => {
             let index = state.playerOrder.indexOf(socket.id);
             let wasHost = state.players[socket.id].isHost;
             
+            // 將玩家移到「離線區凍結庫」
+            let quittingPlayer = state.players[socket.id];
+            quittingPlayer.isHost = false; 
+            state.offlinePlayers.push(quittingPlayer);
+
+            // 從當前牌桌移除
             state.playerOrder.splice(index, 1);
             delete state.players[socket.id];
             
