@@ -2,16 +2,19 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>多人連線版 射龍門 🐉</title>
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <style>
         :root { --table-color: radial-gradient(circle at 50% 40%, #1a5e20 0%, #003300 100%); --gold: #FFD700; --panel-bg: rgba(0, 0, 0, 0.7); }
-        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: #111; display: flex; height: 100vh; overflow: hidden; color: white; position: relative;}
+        /* 拿掉 body 的 overflow: hidden，讓手機版有需要時可以滑動 */
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: #111; display: flex; height: 100vh; color: white; position: relative;}
         
-        #loginOverlay { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        /* 登入大廳 UI */
+        #loginOverlay { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow-y: auto; padding: 20px 0; box-sizing: border-box;}
         #loginOverlay h1 { font-size: 4.5em; color: var(--gold); text-shadow: 0 0 30px rgba(255,215,0,0.6); margin-bottom: 30px; letter-spacing: 5px;}
-        .login-box { background: rgba(30, 30, 30, 0.8); padding: 40px; border-radius: 20px; border: 1px solid #444; box-shadow: 0 20px 50px rgba(0,0,0,0.9); width: 90%; max-width: 400px; backdrop-filter: blur(10px); }
+        .login-box { background: rgba(30, 30, 30, 0.8); padding: 40px; border-radius: 20px; border: 1px solid #444; box-shadow: 0 20px 50px rgba(0,0,0,0.9); width: 90%; max-width: 400px; backdrop-filter: blur(10px); margin: auto;}
         
         .input-group { margin-bottom: 25px; text-align: left; }
         .input-group label { display: block; color: #aaa; margin-bottom: 10px; font-size: 0.95em; font-weight: bold; }
@@ -31,11 +34,11 @@
         .btn-secondary:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(41, 128, 185, 0.6); filter: brightness(1.2); }
         #roomCodeInput { letter-spacing: 10px; font-weight: bold; color: var(--gold); }
 
-        #setupOverlay { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.95); z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-        .setup-group { margin: 15px 0; }
-        .setup-group label { color: #ccc; font-size: 1.2em; display: block; margin-bottom: 5px;}
-        #setupControls input { font-size: 1.5em; padding: 10px; border-radius: 8px; border: 2px solid var(--gold); background: #111; color: var(--gold); text-align: center; width: 220px; outline: none;}
-        #setupControls button { font-size: 1.2em; padding: 12px 30px; cursor: pointer; border-radius: 8px; font-weight: bold; border: none; background: linear-gradient(135deg, #FFD700, #F39C12); color: black; margin-top: 15px;}
+        #setupOverlay { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.95); z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow-y: auto; }
+        .setup-group { margin: 15px 0; width: 100%; max-width: 300px; text-align: left; margin-left: auto; margin-right: auto;}
+        .setup-group label { color: #ccc; font-size: 1.1em; display: block; margin-bottom: 5px;}
+        #setupControls input { font-size: 1.5em; padding: 10px; border-radius: 8px; border: 2px solid var(--gold); background: #111; color: var(--gold); text-align: center; width: 100%; box-sizing: border-box; outline: none;}
+        #setupControls button { font-size: 1.2em; padding: 12px 30px; cursor: pointer; border-radius: 8px; font-weight: bold; border: none; background: linear-gradient(135deg, #FFD700, #F39C12); color: black; margin-top: 15px; width: 100%; max-width: 300px;}
         
         .host-reset-btn { position: absolute; top: 15px; left: 15px; background: linear-gradient(135deg, #c0392b, #e74c3c); color: white; border: 2px solid #fff; padding: 10px 15px; font-size: 1em; border-radius: 8px; cursor: pointer; z-index: 2000; display: none; }
         .end-game-btn { position: absolute; top: 15px; right: 15px; background: linear-gradient(135deg, #8e44ad, #9b59b6); color: white; border: 2px solid #fff; padding: 10px 15px; font-size: 1em; border-radius: 8px; cursor: pointer; z-index: 2000; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: none; }
@@ -52,8 +55,8 @@
         .main-game { flex-grow: 1; padding: 20px; display: flex; justify-content: center; align-items: center; }
         .casino-table { width: 100%; max-width: 1200px; height: 90%; background: var(--table-color); border-radius: 100px; box-shadow: inset 0 0 50px rgba(0,0,0,0.8), 0 0 0 15px #3e2723; display: flex; flex-direction: column; justify-content: space-between; padding: 40px; box-sizing: border-box; }
         
-        .top-panel { display: flex; justify-content: space-between; }
-        .pool-box, .deck-info { background: var(--panel-bg); border: 2px solid var(--gold); border-radius: 15px; padding: 15px 30px; text-align: center; }
+        .top-panel { display: flex; justify-content: space-between; gap: 10px; }
+        .pool-box, .deck-info { background: var(--panel-bg); border: 2px solid var(--gold); border-radius: 15px; padding: 15px; text-align: center; flex: 1;}
         .pool-amount { font-size: 3em; color: var(--gold); font-weight: bold; }
         
         .center-board { display: flex; justify-content: center; gap: 40px; perspective: 1200px; }
@@ -73,29 +76,77 @@
         .btn-pass { background: #546E7A; color: white; border:none; padding: 15px 30px; border-radius:8px; font-size:1.2em; font-weight:bold; cursor:pointer;}
         .btn-danger { background: #D50000; color: white; border:none; padding: 15px 30px; border-radius:8px; font-size:1.2em; font-weight:bold; cursor:pointer;}
 
-        #resultOverlay { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.95); z-index: 3000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-        .leaderboard-container { width: 90%; max-width: 600px; background: #222; border-radius: 15px; padding: 20px; border: 2px solid var(--gold); box-shadow: 0 0 30px rgba(255,215,0,0.3); max-height: 60vh; overflow-y: auto; }
+        #resultOverlay { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.95); z-index: 3000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow-y: auto; padding: 20px 0;}
+        .leaderboard-container { width: 90%; max-width: 600px; background: #222; border-radius: 15px; padding: 20px; border: 2px solid var(--gold); box-shadow: 0 0 30px rgba(255,215,0,0.3); max-height: none; margin: auto; }
         .leaderboard-item { display: flex; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid #444; font-size: 1.8em; align-items: center; }
         .medal-icon { font-size: 1.2em; margin-right: 15px; }
+
+        /* ==========================================
+           📱 手機版 RWD (響應式設計) 自動排版
+           ========================================== */
+        @media (max-width: 768px) {
+            body { flex-direction: column; overflow-y: auto; }
+            
+            /* 登入畫面縮小，避免鍵盤遮擋 */
+            #loginOverlay h1 { font-size: 3em; margin-bottom: 15px; }
+            .login-box { padding: 20px; width: 95%; box-sizing: border-box; }
+            .login-box input, .login-box button { font-size: 1.1em; padding: 12px; }
+            .join-group { padding: 15px; }
+            
+            /* 遊戲畫面的左上、右上按鈕 */
+            .host-reset-btn { top: 5px; left: 5px; font-size: 0.8em; padding: 5px 10px; }
+            .end-game-btn { top: 5px; right: 5px; font-size: 0.8em; padding: 5px 10px; }
+
+            /* 側邊欄 (玩家清單) 移到最上方，變成橫向 */
+            .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 2px solid #333; margin-top: 40px; padding: 10px; box-sizing: border-box;}
+            .room-tag { font-size: 1em; margin-bottom: 10px; padding: 5px; }
+            .player-list { max-height: 150px; overflow-y: auto; }
+            .player-item { font-size: 1em; padding: 8px; }
+            
+            /* 牌桌縮小調整 */
+            .main-game { padding: 10px; height: auto; min-height: 60vh; }
+            .casino-table { border-radius: 20px; padding: 15px; height: 100%; justify-content: flex-start; gap: 20px;}
+            
+            .pool-amount { font-size: 1.8em; }
+            .top-panel { margin-bottom: 10px; }
+            
+            /* 撲克牌縮小 */
+            .center-board { gap: 10px; }
+            .card { width: 70px; height: 105px; border-radius: 6px; }
+            .card-val { font-size: 16px; padding: 5px;}
+            .card-suit { font-size: 30px; }
+            #card3 { margin-top: -15px !important; }
+
+            /* 底部操作區縮小，讓按鈕可以折行 */
+            #resultMsg { font-size: 1.2em; }
+            .controls { flex-wrap: wrap; gap: 10px; }
+            #betAmount { width: 100%; max-width: 200px; font-size: 1.2em; padding: 10px; margin-bottom: 5px;}
+            .btn-shoot, .btn-pass, .btn-danger { padding: 10px 15px; font-size: 1em; flex: 1; min-width: 80px;}
+            
+            /* 結算畫面字體縮小 */
+            #resultOverlay h1 { font-size: 2.5em; }
+            #resultOverlay h2 { font-size: 1.2em; }
+            .leaderboard-item { font-size: 1.2em; padding: 10px; }
+        }
     </style>
 </head>
 <body>
 
-    <button id="hostResetBtn" class="host-reset-btn" onclick="forceReset()">🛑 強制重置包廂</button>
-    <button id="endGameBtn" class="end-game-btn" onclick="endGame()">🏆 結束牌局並結算</button>
+    <button id="hostResetBtn" class="host-reset-btn" onclick="forceReset()">🛑 強制重置</button>
+    <button id="endGameBtn" class="end-game-btn" onclick="endGame()">🏆 結束並結算</button>
 
     <div id="loginOverlay">
         <h1>🐉 射龍門 大廳 🐉</h1>
         <div class="login-box">
             <div class="input-group">
-                <label>📍 第一步：輸入你的遊戲暱稱</label>
+                <label>📍 第一步：輸入遊戲暱稱</label>
                 <input type="text" id="playerName" placeholder="例如：賭神高進" maxlength="10">
             </div>
             <button class="btn-primary" onclick="createRoom()">👑 創建專屬新包廂</button>
             <div class="divider-text">或者</div>
             <div class="join-group">
                 <div class="input-group" style="margin-bottom: 15px;">
-                    <label>📍 第二步：加入朋友的牌局</label>
+                    <label>📍 第二步：加入朋友牌局</label>
                     <input type="text" id="roomCodeInput" placeholder="輸入 4 碼房號" maxlength="4">
                 </div>
                 <button class="btn-secondary" onclick="joinRoom()">🚪 加入包廂</button>
@@ -104,7 +155,7 @@
     </div>
 
     <div id="setupOverlay" style="display:none;">
-        <h1 id="setupTitle">設定包廂規則</h1>
+        <h1 id="setupTitle" style="font-size: 2em; margin-top: 20px;">設定包廂規則</h1>
         <div id="setupControls">
             <div class="setup-group">
                 <label>包廂人數 (達標自動開局)：</label>
@@ -123,7 +174,7 @@
     </div>
 
     <div id="resultOverlay" style="display:none;">
-        <h1 style="font-size: 4em; margin-bottom: 10px;">🏆 最終結算 🏆</h1>
+        <h1 style="font-size: 3.5em; margin-bottom: 10px;">🏆 最終結算 🏆</h1>
         <h2 style="color: #aaa; margin-bottom: 30px;">剩餘彩池: <span id="finalPoolAmount" style="color:var(--gold);">已結算</span></h2>
         <div class="leaderboard-container" id="leaderboardList"></div>
         <button onclick="closeResult()" style="margin-top: 30px; font-size: 1.2em; padding: 12px 30px; border-radius: 8px; cursor: pointer; background: #555; color: white; border: none;">關閉結算面板</button>
@@ -139,11 +190,11 @@
         <div class="casino-table">
             <div class="top-panel">
                 <div class="pool-box">
-                    <div style="color:#aaa;">Total Pool</div>
+                    <div style="color:#aaa; font-size: 0.8em;">Total Pool</div>
                     <div class="pool-amount">$<span id="poolAmount">0</span></div>
                 </div>
                 <div class="deck-info">
-                    <div style="color:#aaa;">牌庫剩餘</div>
+                    <div style="color:#aaa; font-size: 0.8em;">牌庫剩餘</div>
                     <div class="pool-amount"><span id="cardsLeft">104</span></div>
                 </div>
             </div>
@@ -158,12 +209,12 @@
                 <div id="resultMsg">等待開局...</div>
                 
                 <div class="controls" id="actionArea" style="display:none;">
-                    <input type="number" id="betAmount" placeholder="籌碼..." min="10" step="10" style="width:150px; font-size:1.5em; text-align:center; border-radius:8px; outline:none; border:2px solid var(--gold); background:#222; color:var(--gold);">
-                    <div id="normalAction" style="display:flex; gap:10px;">
+                    <input type="number" id="betAmount" placeholder="下注籌碼..." min="10" step="10">
+                    <div id="normalAction" style="display:flex; gap:10px; width: 100%; justify-content: center;">
                         <button class="btn-shoot" onclick="shoot('normal')">🚀 射門</button>
                         <button class="btn-pass" onclick="passRound()">💨 PASS</button>
                     </div>
-                    <div id="pairAction" style="display:none; gap:10px;">
+                    <div id="pairAction" style="display:none; gap:10px; width: 100%; justify-content: center;">
                         <button class="btn-danger" onclick="shoot('high')">🔼 猜大</button>
                         <button class="btn-danger" onclick="shoot('low')">🔽 猜小</button>
                         <button class="btn-pass" onclick="passRound()">💨 PASS</button>
@@ -179,9 +230,6 @@
         let isMyTurn = false;
         let currentRoomId = "";
 
-        // ==========================================
-        // 🎵 內建 8-bit 電子賭場音效引擎 (Web Audio API)
-        // ==========================================
         let audioCtx;
         function initAudio() {
             if (!audioCtx) {
@@ -207,30 +255,29 @@
         }
 
         const sfx = {
-            card: () => playTone(400, 'square', 0.1, 0.03), // 短促發牌聲
+            card: () => playTone(400, 'square', 0.1, 0.03),
             win: () => { 
                 playTone(440, 'sine', 0.1, 0.1); 
                 setTimeout(()=>playTone(554, 'sine', 0.1, 0.1), 100); 
                 setTimeout(()=>playTone(659, 'sine', 0.3, 0.1), 200); 
-            }, // 贏錢：歡樂三連音
+            }, 
             lose: () => { 
                 playTone(300, 'sawtooth', 0.2, 0.1); 
                 setTimeout(()=>playTone(280, 'sawtooth', 0.2, 0.1), 200); 
                 setTimeout(()=>playTone(260, 'sawtooth', 0.4, 0.1), 400); 
-            }, // 輸錢：哀傷下樓梯
+            }, 
             hit: () => { 
                 playTone(150, 'square', 0.3, 0.2); 
                 setTimeout(()=>playTone(100, 'square', 0.5, 0.2), 150); 
-            }, // 撞柱：低音錯誤警報
+            },
             coin: () => {
                 playTone(1200, 'sine', 0.1, 0.1);
                 setTimeout(()=>playTone(1600, 'sine', 0.3, 0.1), 100);
-            } // 金幣補血聲
+            }
         };
-        // ==========================================
 
         function getPlayerName() {
-            initAudio(); // 確保瀏覽器解鎖音效權限
+            initAudio(); 
             let name = document.getElementById('playerName').value.trim();
             if (!name) alert("請輸入暱稱！");
             return name;
@@ -342,16 +389,16 @@
                 ['card1', 'card2', 'card3'].forEach(id => document.getElementById(id).classList.remove('flipped'));
 
                 if (isHost) {
-                    document.getElementById('setupTitle').innerText = state.pool === 0 ? "新的一局！請室長重新設定" : "你是室長，請設定遊戲規則";
+                    document.getElementById('setupTitle').innerText = state.pool === 0 ? "新的一局！請重新設定" : "你是室長，請設定規則";
                     document.getElementById('setupControls').style.display = 'block';
                 } else {
-                    document.getElementById('setupTitle').innerText = "等待室長設定規則中 ⏳...";
+                    document.getElementById('setupTitle').innerText = "等待室長設定規則⏳...";
                     document.getElementById('setupControls').style.display = 'none';
                 }
             } else if (state.status === 'waiting_for_players') {
                 setupOverlay.style.display = 'flex';
                 document.getElementById('actionArea').style.display = 'none'; 
-                document.getElementById('setupTitle').innerHTML = state.message + `<br><br><div style="color:var(--gold); font-size: 1.2em; border: 3px dashed var(--gold); padding: 15px 40px; border-radius: 15px; display: inline-block; letter-spacing: 10px; background: rgba(0,0,0,0.5);">包廂號碼：${currentRoomId}</div>`;
+                document.getElementById('setupTitle').innerHTML = state.message + `<br><br><div style="color:var(--gold); font-size: 1.2em; border: 3px dashed var(--gold); padding: 15px 20px; border-radius: 15px; display: inline-block; letter-spacing: 5px; background: rgba(0,0,0,0.5);">包廂號碼：<br>${currentRoomId}</div>`;
                 document.getElementById('setupControls').style.display = 'none';
             } else {
                 setupOverlay.style.display = 'none';
@@ -369,7 +416,7 @@
             msgEl.innerText = state.message;
             msgEl.style.color = state.messageColor;
 
-            sfx.coin(); // 🎵 播放補血金幣音效
+            sfx.coin(); 
             confetti({ particleCount: 150, spread: 100, origin: { y: 0 }, colors: ['#FFD700', '#F39C12', '#F1C40F'], zIndex: 9999 });
         });
 
@@ -386,11 +433,11 @@
                 document.getElementById('c3-front').innerHTML = ''; 
 
                 document.getElementById('card1').classList.add('flipped');
-                sfx.card(); // 🎵 播放第一張發牌音效
+                sfx.card(); 
 
                 setTimeout(() => {
                     document.getElementById('card2').classList.add('flipped');
-                    sfx.card(); // 🎵 播放第二張發牌音效
+                    sfx.card(); 
                 }, 300);
             }, 300);
 
@@ -420,9 +467,8 @@
 
             renderCard(data.state.tableCards.c3, 'c3-front');
             document.getElementById('card3').classList.add('flipped');
-            sfx.card(); // 🎵 播放第三張發牌音效
+            sfx.card(); 
 
-            // 🎵 根據結果播放對應的勝利、失敗或撞柱音效
             setTimeout(() => {
                 if (data.state.message.includes('撞柱')) {
                     sfx.hit();
@@ -432,12 +478,12 @@
                 } else {
                     sfx.lose();
                 }
-            }, 400); // 稍微延遲讓牌先翻開
+            }, 400); 
         });
 
         socket.on('game_ended', (data) => {
             document.getElementById('resultOverlay').style.display = 'flex';
-            document.getElementById('finalPoolAmount').innerText = `已均分給大家 (每人 +$${data.distributedShare})`;
+            document.getElementById('finalPoolAmount').innerText = `已均分 (每人 +$${data.distributedShare})`;
             
             let listHtml = '';
             data.leaderboard.forEach((p, index) => {
@@ -459,7 +505,7 @@
             
             document.getElementById('leaderboardList').innerHTML = listHtml;
             
-            sfx.win(); // 🎵 播放結算勝利音效
+            sfx.win(); 
             confetti({ particleCount: 400, spread: 150, origin: { y: 0.3 }, zIndex: 4000 });
         });
 
