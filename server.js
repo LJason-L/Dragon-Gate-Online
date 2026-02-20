@@ -8,11 +8,9 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
-// === 新增：房間管理系統 ===
-let rooms = {}; // 存放所有房間的狀態 { "1234": { pool: ... }, "ABCD": { ... } }
+let rooms = {}; 
 const suits = ['♠', '♥', '♦', '♣'];
 
-// 產生隨機 4 碼房號
 function generateRoomId() {
     let result = '';
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -22,13 +20,13 @@ function generateRoomId() {
     return result;
 }
 
-// 初始化一個全新的房間狀態
 function createInitialGameState() {
     return {
         pool: 0,
         initialPool: 2000,
         passFee: 0,
         maxPlayers: 0, 
+        numberOfDecks: 2, // 新增：預設 2 副牌
         deck: [],
         players: {}, 
         playerOrder: [], 
@@ -41,11 +39,11 @@ function createInitialGameState() {
     };
 }
 
-// 所有的遊戲邏輯函數，現在都要傳入 roomId 來知道是在操作哪一桌
 function initDeck(roomId) {
     let state = rooms[roomId];
     state.deck = [];
-    for (let i = 0; i < 2; i++) { 
+    let numDecks = state.numberOfDecks || 2;
+    for (let i = 0; i < numDecks; i++) { 
         for (let s of suits) {
             for (let v = 1; v <= 13; v++) { state.deck.push({ suit: s, value: v }); }
         }
@@ -62,9 +60,11 @@ function drawCard(roomId) {
     return state.deck.pop();
 }
 
-function dealInitialCardsForCurrentTurn(roomId) {
+// 將發牌邏輯獨立出來
+function executeDeal(roomId) {
     let state = rooms[roomId];
-    if (state.deck.length < 3) initDeck(roomId);
+    if(!state) return;
+    
     let c1 = drawCard(roomId);
     let c2 = drawCard(roomId);
     if (c1.value > c2.value) [c1, c2] = [c2, c1];
@@ -79,7 +79,27 @@ function dealInitialCardsForCurrentTurn(roomId) {
     state.message = state.isPair ? `😱 撞柱危機！大家看【${pName}】要猜大還猜小！` : `大家都在看【${pName}】要下多少籌碼...`;
     state.messageColor = state.isPair ? "#FF1744" : "white";
     
-    io.to(roomId).emit('cards_dealt', state); // 只發給這個房間
+    io.to(roomId).emit('cards_dealt', state); 
+}
+
+// 帶入洗牌動畫判斷
+function dealInitialCardsForCurrentTurn(roomId) {
+    let state = rooms[roomId];
+    if(!state) return;
+
+    if (state.deck.length < 3) {
+        state.message = "🃏 牌靴見底了，莊家重新洗牌中...";
+        state.messageColor = "#FFD700";
+        io.to(roomId).emit('update_state', state); 
+        io.to(roomId).emit('shuffling_deck'); // 觸發前端洗牌動畫
+        
+        setTimeout(() => {
+            initDeck(roomId);
+            executeDeal(roomId);
+        }, 3000); // 停頓 3 秒讓大家看洗牌
+    } else {
+        executeDeal(roomId);
+    }
 }
 
 function nextTurn(roomId) {
@@ -101,18 +121,17 @@ function startGame(roomId) {
     }
     
     io.to(roomId).emit('update_state', state); 
-    dealInitialCardsForCurrentTurn(roomId);
+    executeDeal(roomId); 
 }
 
 io.on('connection', (socket) => {
     
-    // === 1. 玩家創建房間 ===
     socket.on('create_room', (playerName) => {
         let roomId = generateRoomId();
-        while(rooms[roomId]) roomId = generateRoomId(); // 確保房號不重複
+        while(rooms[roomId]) roomId = generateRoomId(); 
 
         socket.join(roomId);
-        socket.roomId = roomId; // 讓 socket 記住自己在哪個房間
+        socket.roomId = roomId; 
 
         rooms[roomId] = createInitialGameState();
         let state = rooms[roomId];
@@ -121,11 +140,10 @@ io.on('connection', (socket) => {
         state.playerOrder.push(socket.id);
         state.message = "你是室長，請設定遊戲規則與人數！";
         
-        socket.emit('room_joined', roomId); // 告訴前端房號
+        socket.emit('room_joined', roomId); 
         io.to(roomId).emit('update_state', state);
     });
 
-    // === 2. 玩家加入現有房間 ===
     socket.on('join_room', (data) => {
         let { playerName, roomId } = data;
         roomId = roomId.toUpperCase();
@@ -160,7 +178,6 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('update_state', state);
     });
 
-    // 以下所有事件，都要先透過 socket.roomId 找到該房間的狀態
     socket.on('set_pool', (data) => {
         let roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -172,6 +189,7 @@ io.on('connection', (socket) => {
         state.pool = data.amount;
         state.passFee = data.passFee || 0;
         state.maxPlayers = data.maxPlayers || 2; 
+        state.numberOfDecks = data.decks || 2; // 儲存副牌數量
         
         if (state.playerOrder.length >= state.maxPlayers) {
             startGame(roomId);
@@ -241,7 +259,9 @@ io.on('connection', (socket) => {
         let { bet, guessType } = data;
         let player = state.players[socket.id];
         
-        if (typeof bet !== 'number' || bet <= 0) return;
+        // 嚴格阻擋作弊：最低下注不能低於過路費
+        let minBet = Math.min(state.pool, state.passFee > 0 ? state.passFee : 10);
+        if (typeof bet !== 'number' || bet < minBet) return;
         if (bet > state.pool) bet = state.pool; 
 
         let c3 = drawCard(roomId);
@@ -260,7 +280,7 @@ io.on('connection', (socket) => {
                 amountChange = -bet;
                 state.messageColor = "#00E676";
             } else {
-                state.message = `❌ 射偏！${player.name} 輸掉 $${bet} ❌`;
+                state.message = `❌ 猜錯！${player.name} 輸掉 $${bet} ❌`;
                 amountChange = bet;
                 state.messageColor = "#aaa";
             }
@@ -286,7 +306,7 @@ io.on('connection', (socket) => {
         let isBankrupt = false;
         if (state.pool <= 0) {
             state.pool = 0;
-            state.message += " 🚨 彩池沒了！";
+            state.message += " 🚨 彩池破產！";
             state.messageColor = "#FFD700";
             isBankrupt = true;
         }
@@ -352,7 +372,7 @@ io.on('connection', (socket) => {
             
             if (state.playerOrder.length > 0) {
                 if (wasHost) {
-                    state.players[state.playerOrder[0]].isHost = true; // 移交室長
+                    state.players[state.playerOrder[0]].isHost = true; 
                 }
 
                 if (state.status === 'waiting_for_players') {
@@ -367,7 +387,6 @@ io.on('connection', (socket) => {
                 }
                 io.to(roomId).emit('update_state', state);
             } else {
-                // 如果房間沒人了，直接刪除這個房間的資料，釋放伺服器記憶體！
                 delete rooms[roomId];
             }
         }
