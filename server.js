@@ -34,8 +34,8 @@ function createInitialGameState() {
         currentTurnIndex: 0, 
         tableCards: { c1: null, c2: null, c3: null },
         isPair: false,
-        message: "等待玩家加入...",
-        messageColor: "#d4af37", // 尊爵金
+        message: "等待 VIP 入座...",
+        messageColor: "#d4af37", 
         status: 'waiting_for_host' 
     };
 }
@@ -76,7 +76,7 @@ function executeDeal(roomId) {
     if(!state.players[currentPlayerId]) return;
     let pName = state.players[currentPlayerId].name;
     
-    state.message = state.isPair ? `⚠️ 撞柱危機！看【${pName}】猜大還猜小！` : `全場注視著【${pName}】...`;
+    state.message = state.isPair ? `⚠️ 撞柱危機！全場看【${pName}】猜大還猜小！` : `全場注視著【${pName}】下注...`;
     state.messageColor = state.isPair ? "#ff4757" : "#f8fafc";
     
     io.to(roomId).emit('cards_dealt', state); 
@@ -87,7 +87,7 @@ function dealInitialCardsForCurrentTurn(roomId) {
     if(!state) return;
 
     if (state.deck.length < 3) {
-        state.message = "🃏 牌庫見底，荷官洗牌中...";
+        state.message = "🃏 牌靴見底，荷官洗牌中...";
         state.messageColor = "#d4af37";
         io.to(roomId).emit('update_state', state); 
         io.to(roomId).emit('shuffling_deck'); 
@@ -104,6 +104,30 @@ function dealInitialCardsForCurrentTurn(roomId) {
 function nextTurn(roomId) {
     let state = rooms[roomId];
     if(!state || state.status !== 'playing') return; 
+
+    // 🚀 關鍵優化 1：解決「孤狼無聊」問題 🚀
+    let waitingIds = Object.keys(state.players).filter(id => state.players[id].isWaiting);
+    // 如果場上只剩 1 人(或更少) 且 旁邊有人在等，直接把他們拉進來！
+    if (state.playerOrder.length <= 1 && waitingIds.length > 0) {
+        state.message = "👥 人數過少，自動邀請觀戰 VIP 攜資入局！";
+        state.messageColor = "#d4af37";
+        
+        waitingIds.forEach(id => {
+            state.players[id].isWaiting = false;
+            state.playerOrder.push(id);
+            state.players[id].pnl -= state.poolPerPlayer;
+            state.pool += state.poolPerPlayer; // 門票疊加到現有底池
+        });
+
+        io.to(roomId).emit('auto_replenish', state); 
+        
+        setTimeout(() => {
+            state.currentTurnIndex = (state.currentTurnIndex + 1) % state.playerOrder.length;
+            dealInitialCardsForCurrentTurn(roomId);
+        }, 2500);
+        return;
+    }
+
     if(state.playerOrder.length === 0) return;
     state.currentTurnIndex = (state.currentTurnIndex + 1) % state.playerOrder.length;
     dealInitialCardsForCurrentTurn(roomId);
@@ -217,7 +241,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 🚀 新增：室長強制提前開局 🚀
     socket.on('force_start', () => {
         let roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -430,6 +453,15 @@ io.on('connection', (socket) => {
             let onlineIds = Object.keys(state.players);
             if (onlineIds.length > 0) {
                 if (wasHost) state.players[onlineIds[0]].isHost = true; 
+                
+                // 🚀 關鍵優化 2：斷線時如果場上剩不到 2 人且有觀戰者，強制推進下一回合拉人入局
+                if(state.status === 'playing' && state.playerOrder.length <= 1) {
+                    let waitingIds = Object.keys(state.players).filter(id => state.players[id].isWaiting);
+                    if(waitingIds.length > 0) {
+                        nextTurn(roomId); 
+                    }
+                }
+                
                 io.to(roomId).emit('update_state', state);
             } else {
                 delete rooms[roomId]; 
