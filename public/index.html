@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>VIP 射龍門 🐉 頂級線上俱樂部</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐉</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
@@ -141,7 +142,6 @@
         .card-corner-suit { font-size: 22px; margin-top: 2px; }
         .card-suit { font-size: 70px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.95;}
 
-        /* 操作儀表板 */
         .bottom-panel { 
             width: 100%; max-width: 800px; background: linear-gradient(to top, rgba(15,15,15,0.95) 0%, rgba(30,30,30,0.85) 100%); 
             border: 1px solid #333; border-top: 1px solid #555; border-radius: 24px; padding: 30px; text-align: center; 
@@ -153,21 +153,14 @@
         .action-input { 
             width: 220px; padding: 15px; font-size: 1.6em; border-radius: 12px; border: 2px solid var(--gold-dark); 
             background: #000; color: var(--gold); text-align: center; font-weight: bold; outline: none; box-shadow: inset 0 2px 10px rgba(0,0,0,0.8);
-            margin: 0; height: 60px; /* 強制統一高度 */
+            margin: 0; height: 60px;
         }
         .action-input:focus { border-color: var(--gold); box-shadow: inset 0 2px 10px rgba(0,0,0,0.8), 0 0 20px var(--gold-glow); }
         
-        /* 🚀 修正按鈕對齊：強制相同尺寸 🚀 */
         #actionArea button {
             min-width: 180px; 
             height: 60px; 
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 1.2em;
-            white-space: nowrap;
-            margin: 0;
-            padding: 0 20px;
+            display: flex; justify-content: center; align-items: center; font-size: 1.2em; white-space: nowrap; margin: 0; padding: 0 20px;
         }
         
         .btn-shoot { background: linear-gradient(to bottom, #2ECC71 0%, #00C853 100%); color: #000; box-shadow: 0 8px 20px rgba(0,200,83,0.3), inset 0 2px 2px rgba(255,255,255,0.6);}
@@ -177,7 +170,6 @@
         .shuffle-icon { font-size: 8em; animation: float 2s ease-in-out infinite; filter: drop-shadow(0 0 30px rgba(255,215,0,0.3));}
         @keyframes float { 0% { transform: translateY(0px) rotate(0deg); } 50% { transform: translateY(-20px) rotate(10deg); } 100% { transform: translateY(0px) rotate(0deg); } }
 
-        /* 手機版 RWD 完美排版 */
         @media (max-width: 768px) {
             body { flex-direction: column; overflow-y: auto; }
             .glass-panel { width: 92%; padding: 30px 20px; border-radius: 20px;}
@@ -208,17 +200,11 @@
             .bottom-panel { padding: 20px 15px; margin-top: 15px; border-radius: 20px;}
             #resultMsg { font-size: 1.3em; margin-bottom: 15px; }
             
-            /* 🚀 手機版動態等比例縮放 🚀 */
             .controls { flex-direction: column; width: 100%; gap: 10px;}
             .action-input { width: 100%; font-size: 1.3em; padding: 12px; height: 55px; }
             #normalAction, #pairAction { width: 100%; display: flex; gap: 10px; flex-wrap: nowrap; }
             #actionArea button {
-                min-width: 0;
-                width: auto;
-                flex: 1; /* 手機版按鈕完美等比放大 */
-                height: 55px;
-                padding: 0 10px;
-                font-size: 1.05em;
+                min-width: 0; width: auto; flex: 1; height: 55px; padding: 0 10px; font-size: 1.05em;
             }
         }
     </style>
@@ -231,7 +217,7 @@
     </div>
 
     <div class="overlay-screen" id="loginOverlay">
-        <h1 class="title-gold">VIP 俱樂部</h1>
+        <h1 class="title-gold">射龍門</h1>
         <div class="glass-panel" style="max-width: 450px; width: 90%;">
             <div class="input-group">
                 <label>身份登記 (玩家暱稱)</label>
@@ -294,7 +280,7 @@
 
     <div id="shuffleOverlay">
         <div class="shuffle-icon">🃏</div>
-        <h2 style="color:var(--gold); margin-top:30px; font-size: 2em; letter-spacing: 4px; font-weight:900; text-shadow: 0 0 20px var(--gold-glow);">牌庫見底<br>荷官重新洗牌中...</h2>
+        <h2 style="color:var(--gold); margin-top:30px; font-size: 2em; letter-spacing: 4px; font-weight:900; text-shadow: 0 0 20px var(--gold-glow);">牌靴見底<br>荷官重新洗牌中...</h2>
     </div>
 
     <div class="overlay-screen" id="resultOverlay" style="display:none;">
@@ -302,7 +288,7 @@
             <h1 class="title-gold" style="font-size: 3em; margin-bottom: 10px;">🏆 終局結算</h1>
             <h3 style="color: #A0A0A0; text-align: center; margin-top: 0; margin-bottom: 25px; font-size:1.2em;">剩餘彩池：<span style="color:var(--gold);">均分 (每人在線玩家 +$<span id="finalPoolAmount">0</span>)</span></h3>
             <div class="player-list" id="leaderboardList" style="flex-grow: 1; overflow-y: auto; padding-right: 5px;"></div>
-            <button class="btn-secondary" onclick="closeResult()" style="margin-top: 25px;">關閉面板</button>
+            <button class="btn-secondary" onclick="closeResult()" style="margin-top: 25px;">確認結算並準備新局</button>
         </div>
     </div>
 
@@ -433,7 +419,7 @@
 
         function forceStart() { socket.emit('force_start'); }
         function forceReset() { if(confirm("確定要強制中斷目前牌局，並讓所有人重新設定嗎？")) socket.emit('force_reset'); }
-        function endGame() { if(confirm("確定要終止牌局，並結算剩餘彩池嗎？(離線玩家也會列入結算)")) socket.emit('end_game'); }
+        function endGame() { if(confirm("確定要終止牌局，並結算剩餘彩池嗎？(結算後大家盈虧將歸零並重開新局)")) socket.emit('end_game'); }
         function closeResult() { document.getElementById('resultOverlay').style.display = 'none'; }
 
         function renderCard(cardObj, elementId) {

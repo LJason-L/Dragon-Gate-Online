@@ -35,7 +35,7 @@ function createInitialGameState() {
         tableCards: { c1: null, c2: null, c3: null },
         isPair: false,
         message: "等待 VIP 入座...",
-        messageColor: "#d4af37", 
+        messageColor: "#F5D061", 
         status: 'waiting_for_host' 
     };
 }
@@ -87,8 +87,8 @@ function dealInitialCardsForCurrentTurn(roomId) {
     if(!state) return;
 
     if (state.deck.length < 3) {
-        state.message = "🃏 牌靴見底，荷官洗牌中...";
-        state.messageColor = "#d4af37";
+        state.message = "🃏 牌庫見底，荷官洗牌中...";
+        state.messageColor = "#F5D061";
         io.to(roomId).emit('update_state', state); 
         io.to(roomId).emit('shuffling_deck'); 
         
@@ -105,18 +105,16 @@ function nextTurn(roomId) {
     let state = rooms[roomId];
     if(!state || state.status !== 'playing') return; 
 
-    // 🚀 關鍵優化 1：解決「孤狼無聊」問題 🚀
     let waitingIds = Object.keys(state.players).filter(id => state.players[id].isWaiting);
-    // 如果場上只剩 1 人(或更少) 且 旁邊有人在等，直接把他們拉進來！
     if (state.playerOrder.length <= 1 && waitingIds.length > 0) {
         state.message = "👥 人數過少，自動邀請觀戰 VIP 攜資入局！";
-        state.messageColor = "#d4af37";
+        state.messageColor = "#F5D061";
         
         waitingIds.forEach(id => {
             state.players[id].isWaiting = false;
             state.playerOrder.push(id);
             state.players[id].pnl -= state.poolPerPlayer;
-            state.pool += state.poolPerPlayer; // 門票疊加到現有底池
+            state.pool += state.poolPerPlayer; 
         });
 
         io.to(roomId).emit('auto_replenish', state); 
@@ -277,6 +275,7 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('update_state', state);
     });
 
+    // 🚀 關鍵修復：結算完畢後，正確廣播新狀態並將玩家盈虧歸零 🚀
     socket.on('end_game', () => {
         let roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -293,19 +292,37 @@ io.on('connection', (socket) => {
             for (let id of state.playerOrder) {
                 state.players[id].pnl += distributedShare;
             }
-            state.pool = 0; 
         }
 
         let leaderboard = [];
-        for (let id in state.players) leaderboard.push(state.players[id]);
+        // 使用展開運算子深拷貝，避免後面的歸零動作影響到顯示的結算榜單
+        for (let id in state.players) leaderboard.push({ ...state.players[id] });
         for (let p of state.offlinePlayers) {
             leaderboard.push({ ...p, name: p.name + " (已離線)" });
         }
         leaderboard.sort((a, b) => b.pnl - a.pnl);
 
         io.to(roomId).emit('game_ended', { leaderboard: leaderboard, distributedShare: distributedShare });
+
+        // === 無縫重啟新局：還原大廳與盈虧 ===
+        state.pool = 0;
         state.status = 'waiting_for_host';
+        state.tableCards = { c1: null, c2: null, c3: null };
         state.offlinePlayers = []; 
+        
+        // 所有人轉正為活躍狀態，並把盈虧徹底清零
+        state.playerOrder = Object.keys(state.players);
+        for (let id in state.players) {
+            state.players[id].isWaiting = false;
+            state.players[id].pnl = 0; 
+        }
+
+        state.message = "🏆 結算完成，室長可設定新一局規則";
+        state.messageColor = "#F5D061";
+        initDeck(roomId); 
+
+        // 發送給所有人，讓大家關閉面板後直接看到乾淨的設定畫面！
+        io.to(roomId).emit('update_state', state);
     });
 
     socket.on('shoot', (data) => {
@@ -352,7 +369,7 @@ io.on('connection', (socket) => {
                 amountChange = -bet;
                 state.messageColor = "#10b981";
             } else {
-                state.message = `❌ 沒進！${player.name} 失去 $${bet} ❌`;
+                state.message = `❌ 射偏！${player.name} 失去 $${bet} ❌`;
                 amountChange = bet;
                 state.messageColor = "#94a3b8";
             }
@@ -364,8 +381,8 @@ io.on('connection', (socket) => {
         let isBankrupt = false;
         if (state.pool <= 0) {
             state.pool = 0;
-            state.message += " 🚨 彩池沒了！";
-            state.messageColor = "#d4af37";
+            state.message += " 🚨 彩池破產！";
+            state.messageColor = "#F5D061";
             isBankrupt = true;
         }
 
@@ -390,7 +407,7 @@ io.on('connection', (socket) => {
                 }
                 
                 state.message = `💰 重新補血！共 ${activeCount} 人入局，每人注資 $${state.poolPerPlayer} 💰`;
-                state.messageColor = "#d4af37";
+                state.messageColor = "#F5D061";
                 
                 io.to(roomId).emit('auto_replenish', state);
                 setTimeout(() => { nextTurn(roomId); }, 2500);
@@ -454,7 +471,6 @@ io.on('connection', (socket) => {
             if (onlineIds.length > 0) {
                 if (wasHost) state.players[onlineIds[0]].isHost = true; 
                 
-                // 🚀 關鍵優化 2：斷線時如果場上剩不到 2 人且有觀戰者，強制推進下一回合拉人入局
                 if(state.status === 'playing' && state.playerOrder.length <= 1) {
                     let waitingIds = Object.keys(state.players).filter(id => state.players[id].isWaiting);
                     if(waitingIds.length > 0) {
