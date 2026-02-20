@@ -98,7 +98,7 @@
 
             .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 2px solid #333; margin-top: 40px; padding: 10px; box-sizing: border-box;}
             .room-tag { font-size: 1em; margin-bottom: 10px; padding: 5px; }
-            .player-list { max-height: 150px; overflow-y: auto; }
+            .player-list { max-height: 250px; overflow-y: auto; }
             .player-item { font-size: 1em; padding: 8px; }
             
             .main-game { padding: 10px; height: auto; min-height: 60vh; }
@@ -161,12 +161,12 @@
         <h1 id="setupTitle" style="font-size: 2em; margin-top: 20px;">設定包廂規則</h1>
         <div id="setupControls">
             <div class="setup-group">
-                <label>包廂人數 (達標自動開局)：</label>
+                <label>包廂人數上限：</label>
                 <input type="number" id="maxPlayersInput" value="4" min="2" step="1">
             </div>
             <div class="setup-group">
-                <label>初始總彩池：</label>
-                <input type="number" id="initPoolInput" value="2000" min="100" step="100">
+                <label>每人投注底池 (入局/補血時扣除)：</label>
+                <input type="number" id="poolPerPlayerInput" value="500" min="50" step="50">
             </div>
             <div class="setup-group">
                 <label>PASS 過路費 (0為免費)：</label>
@@ -201,7 +201,7 @@
                     <div class="pool-amount">$<span id="poolAmount">0</span></div>
                 </div>
                 <div class="deck-info">
-                    <div style="color:#aaa; font-size: 0.8em;">牌庫剩餘</div>
+                    <div style="color:#aaa; font-size: 0.8em;">牌靴剩餘</div>
                     <div class="pool-amount"><span id="cardsLeft">104</span></div>
                 </div>
             </div>
@@ -239,7 +239,7 @@
         let currentPassFee = 0; 
 
         // ==========================================
-        // 🎵 地毯式強制音效解鎖引擎 (針對極端 iOS)
+        // 🎵 地毯式強制音效解鎖引擎
         // ==========================================
         let audioCtx = null;
         
@@ -248,7 +248,7 @@
                 try {
                     const AudioContext = window.AudioContext || window.webkitAudioContext;
                     if(AudioContext) audioCtx = new AudioContext();
-                } catch(e) { console.warn("音效引擎建立失敗", e); }
+                } catch(e) {}
             }
             return audioCtx;
         }
@@ -259,7 +259,6 @@
             if (ctx.state === 'suspended') {
                 ctx.resume();
             }
-            // 播放無聲音頻來強制解鎖
             try {
                 const buffer = ctx.createBuffer(1, 1, 22050);
                 const source = ctx.createBufferSource();
@@ -269,15 +268,13 @@
             } catch(e){}
         }
 
-        // 綁定所有可能的手勢與點擊，無死角解鎖！
         ['touchstart', 'touchend', 'click', 'keydown'].forEach(evt => {
             document.body.addEventListener(evt, unlockAudio, { capture: true });
         });
 
         function playTone(freq, type, duration, vol=0.1) {
             const ctx = getAudioContext();
-            if(!ctx) return;
-            if(ctx.state === 'suspended') ctx.resume();
+            if(!ctx || ctx.state !== 'running') return;
             try {
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
@@ -349,17 +346,18 @@
         socket.on('error_msg', (msg) => { alert(msg); });
 
         function setPool() {
-            let amount = parseInt(document.getElementById('initPoolInput').value);
+            // 🚀 改為讀取「每人投注金額」
+            let poolPerPlayer = parseInt(document.getElementById('poolPerPlayerInput').value);
             let passFee = parseInt(document.getElementById('passFeeInput').value);
             let maxPlayers = parseInt(document.getElementById('maxPlayersInput').value);
             let decks = parseInt(document.getElementById('decksInput').value);
             
-            if(isNaN(amount) || amount <= 0) return alert("彩池金額無效！");
+            if(isNaN(poolPerPlayer) || poolPerPlayer <= 0) return alert("底池金額無效！");
             if(isNaN(maxPlayers) || maxPlayers < 2) return alert("遊戲至少需要 2 人！");
             if(isNaN(passFee) || passFee < 0) passFee = 0;
             if(isNaN(decks) || decks < 1 || decks > 5) return alert("牌數請設定在 1 到 5 副之間！");
             
-            socket.emit('set_pool', { amount, passFee, maxPlayers, decks });
+            socket.emit('set_pool', { poolPerPlayer, passFee, maxPlayers, decks });
         }
 
         function forceReset() {
@@ -369,7 +367,7 @@
         }
 
         function endGame() {
-            if(confirm("確定要終止牌局，並將剩餘彩池均分給大家進行結算嗎？(包含已斷線玩家的資料也會一併結算)")) {
+            if(confirm("確定要終止牌局，並將剩餘彩池均分給【在線玩家】進行結算嗎？(斷線玩家的虧損仍會列入排行榜紀錄)")) {
                 socket.emit('end_game');
             }
         }
@@ -392,8 +390,11 @@
             `;
         }
 
+        // 🚀 UI 大翻新：渲染活躍、觀戰與離線玩家 🚀
         function updatePlayerList(state) {
             let listHtml = '';
+            
+            // 1. 正常在牌桌上廝殺的活躍玩家
             state.playerOrder.forEach((id, index) => {
                 let p = state.players[id];
                 let isCurrentTurn = (index === state.currentTurnIndex && state.status === 'playing');
@@ -408,8 +409,40 @@
                     <span class="${pnlClass}">${pnlSign}${p.pnl}</span>
                 </div>`;
             });
+
+            // 2. 中途加入、正在等彩池破產補血的玩家
+            for(let id in state.players) {
+                if(state.players[id].isWaiting) {
+                    let p = state.players[id];
+                    let hostMarker = p.isHost ? '👑 ' : '';
+                    let pnlClass = p.pnl > 0 ? 'pnl-positive' : (p.pnl < 0 ? 'pnl-negative' : '');
+                    let pnlSign = p.pnl > 0 ? '+' : '';
+                    
+                    listHtml += `<div class="player-item" style="opacity: 0.6; font-size: 0.9em;">
+                        <span>⏳ ${hostMarker}${p.name} ${id === socket.id ? '(你)' : ''} <span style="color:#aaa;">(觀戰/等補血)</span></span> 
+                        <span class="${pnlClass}">${pnlSign}${p.pnl}</span>
+                    </div>`;
+                }
+            }
+
+            // 3. 落跑的離線玩家
+            if(state.offlinePlayers && state.offlinePlayers.length > 0) {
+                listHtml += `<div style="text-align:center; color:#777; margin: 15px 0 5px 0; font-size:0.9em; letter-spacing: 2px;">--- 💤 離線暫存區 💤 ---</div>`;
+                state.offlinePlayers.forEach(p => {
+                    let pnlClass = p.pnl > 0 ? 'pnl-positive' : (p.pnl < 0 ? 'pnl-negative' : '');
+                    let pnlSign = p.pnl > 0 ? '+' : '';
+                    
+                    listHtml += `<div class="player-item" style="color: #666; font-style: italic; font-size: 0.9em;">
+                        <span>🔌 ${p.name}</span> 
+                        <span class="${pnlClass}">${pnlSign}${p.pnl}</span>
+                    </div>`;
+                });
+            }
+
             document.getElementById('playerList').innerHTML = listHtml;
-            isMyTurn = (socket.id === state.playerOrder[state.currentTurnIndex]);
+            
+            // 只有活躍玩家才能看到操作按鈕
+            isMyTurn = (state.playerOrder[state.currentTurnIndex] === socket.id);
         }
 
         socket.on('update_state', (state) => {
@@ -423,7 +456,7 @@
                 btn.innerText = state.passFee > 0 ? `💨 PASS (-$${state.passFee})` : `💨 PASS`;
             });
 
-            let isHost = (state.playerOrder.length > 0 && state.playerOrder[0] === socket.id);
+            let isHost = (state.players[socket.id] && state.players[socket.id].isHost);
             document.getElementById('hostResetBtn').style.display = isHost ? 'block' : 'none';
             document.getElementById('endGameBtn').style.display = (isHost && state.status === 'playing') ? 'block' : 'none';
 
@@ -555,7 +588,6 @@
                 let pnlClass = p.pnl > 0 ? 'pnl-positive' : (p.pnl < 0 ? 'pnl-negative' : '');
                 let pnlSign = p.pnl > 0 ? '+' : '';
                 
-                // 如果是斷線玩家，名字會自帶 (已離線) 標記，並套用灰色字體顯示
                 let isOffline = p.name.includes('(已離線)');
                 let nameStyle = isOffline ? 'color: #777;' : '';
                 
