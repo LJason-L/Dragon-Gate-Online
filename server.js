@@ -9,7 +9,6 @@ const io = new Server(server);
 app.use(express.static('public'));
 
 let rooms = {}; 
-// 🛡️ 導入與 21 點同級的全局計時器管理系統 🛡️
 let roomTimers = {}; 
 
 function generateRoomId() {
@@ -21,7 +20,6 @@ function generateRoomId() {
     return result;
 }
 
-// 🛡️ 終極防卡死：全局時間清理函數 🛡️
 function clearAllTimers(roomId) {
     if(roomTimers[roomId]) { clearTimeout(roomTimers[roomId]); delete roomTimers[roomId]; }
     if(roomTimers[roomId + '_replenish']) { clearTimeout(roomTimers[roomId + '_replenish']); delete roomTimers[roomId + '_replenish']; }
@@ -41,7 +39,7 @@ function createInitialGameState() {
         currentTurnIndex: 0, 
         tableCards: { c1: null, c2: null, c3: null },
         isPair: false,
-        isActionLocked: false, // 🔒 新增：防連點與幽靈計時器的操作鎖
+        isActionLocked: false, 
         message: "等待玩家入座...",
         messageColor: "#F5D061", 
         status: 'waiting_for_host' 
@@ -79,19 +77,17 @@ function executeDeal(roomId) {
 
     state.tableCards = { c1, c2, c3: null };
     state.isPair = (c1.value === c2.value);
-    state.isActionLocked = false; // 🔓 開放玩家操作
+    state.isActionLocked = false; 
 
     let currentPlayerId = state.playerOrder[state.currentTurnIndex];
     if(!state.players[currentPlayerId]) return;
     let player = state.players[currentPlayerId];
     let pName = player.name;
     
-    // 🚀 核心修復：嚴格區分「緊鄰死巷」與「撞柱」 🚀
     let gap = c2.value - c1.value;
 
     if (gap === 1) {
-        // 🚨 這是 3 和 4 這種死巷，無牌可打，強制系統代扣並跳過！
-        state.isActionLocked = true; // 🔒 鎖死前端按鈕
+        state.isActionLocked = true; 
         let fee = state.passFee > 0 ? state.passFee : 10;
         if (fee > state.pool) fee = state.pool;
 
@@ -106,10 +102,9 @@ function executeDeal(roomId) {
 
         clearAllTimers(roomId);
         roomTimers[roomId] = setTimeout(() => { nextTurn(roomId); }, 3000);
-        return; // 🛑 完美煞車！絕對不讓前端有機會干擾！
+        return; 
     }
 
-    // 💡 如果是 JJ (gap === 0) 或正常開門 (gap > 1)，就正常等待玩家下注
     state.message = state.isPair ? `⚠️ 撞柱危機！全場看【${pName}】猜大還猜小！` : `全場注視著【${pName}】下注...`;
     state.messageColor = state.isPair ? "#ff4757" : "#f8fafc";
     
@@ -139,11 +134,11 @@ function dealInitialCardsForCurrentTurn(roomId) {
 function nextTurn(roomId) {
     let state = rooms[roomId];
     if(!state || state.status !== 'playing') return; 
-    clearAllTimers(roomId); // 🛡️ 確保進入下一個玩家時，時間軸絕對乾淨
+    clearAllTimers(roomId); 
 
     let waitingIds = Object.keys(state.players).filter(id => state.players[id].isWaiting);
     if (state.playerOrder.length <= 1 && waitingIds.length > 0) {
-        state.message = "👥 人數過少，自動邀請觀戰 VIP 攜資入局！";
+        state.message = "👥 人數過少，自動邀請觀戰玩家攜資入局！";
         state.messageColor = "#F5D061";
         
         waitingIds.forEach(id => {
@@ -281,7 +276,9 @@ io.on('connection', (socket) => {
         if (!roomId || !rooms[roomId]) return;
         let state = rooms[roomId];
 
-        if (socket.id !== state.playerOrder[0] || state.status !== 'waiting_for_players') return;
+        // 🚀 核心修復：拔除嚴苛的狀態限制，只要你是室長且沒在玩，隨時可開局！ 🚀
+        if (socket.id !== state.playerOrder[0]) return;
+        if (state.status === 'playing') return; 
         
         if (state.playerOrder.length >= 2) {
             startGame(roomId);
@@ -297,7 +294,7 @@ io.on('connection', (socket) => {
 
         if (socket.id !== state.playerOrder[0]) return; 
         
-        clearAllTimers(roomId); // 🛡️ 房間重置時也要清空計時器
+        clearAllTimers(roomId); 
         state.pool = 0;
         state.status = 'waiting_for_host'; 
         state.tableCards = { c1: null, c2: null, c3: null };
@@ -367,7 +364,7 @@ io.on('connection', (socket) => {
         let state = rooms[roomId];
 
         if (socket.id !== state.playerOrder[state.currentTurnIndex]) return;
-        if (state.isActionLocked) return; // 🛡️ 核心防護：拒絕連點！
+        if (state.isActionLocked) return; 
         state.isActionLocked = true; 
         clearAllTimers(roomId); 
         
@@ -460,7 +457,7 @@ io.on('connection', (socket) => {
         let state = rooms[roomId];
 
         if (socket.id !== state.playerOrder[state.currentTurnIndex]) return;
-        if (state.isActionLocked) return; // 🛡️ 核心防護
+        if (state.isActionLocked) return; 
         state.isActionLocked = true;
         clearAllTimers(roomId);
         
@@ -503,7 +500,6 @@ io.on('connection', (socket) => {
                         state.currentTurnIndex--;
                     } else if (index === state.currentTurnIndex) {
                         state.currentTurnIndex = state.currentTurnIndex % state.playerOrder.length;
-                        // 🛡️ 只有在非鎖定狀態下斷線，才立刻補發新牌，否則讓定時器去處理
                         if (state.status === 'playing' && !state.isActionLocked) {
                             clearAllTimers(roomId);
                             dealInitialCardsForCurrentTurn(roomId);
