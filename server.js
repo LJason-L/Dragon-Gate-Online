@@ -79,6 +79,11 @@ function executeDeal(roomId) {
     state.isPair = (c1.value === c2.value);
     state.isActionLocked = false; 
 
+    // 🚀 預防無聲當機：如果找不到人，強制重置輪次
+    if (state.currentTurnIndex >= state.playerOrder.length) {
+        state.currentTurnIndex = 0;
+    }
+
     let currentPlayerId = state.playerOrder[state.currentTurnIndex];
     if(!state.players[currentPlayerId]) return;
     let player = state.players[currentPlayerId];
@@ -138,7 +143,7 @@ function nextTurn(roomId) {
 
     let waitingIds = Object.keys(state.players).filter(id => state.players[id].isWaiting);
     if (state.playerOrder.length <= 1 && waitingIds.length > 0) {
-        state.message = "👥 人數過少，自動邀請觀戰玩家攜資入局！";
+        state.message = "👥 人數過少，自動邀請觀戰 VIP 攜資入局！";
         state.messageColor = "#F5D061";
         
         waitingIds.forEach(id => {
@@ -162,9 +167,11 @@ function nextTurn(roomId) {
     dealInitialCardsForCurrentTurn(roomId);
 }
 
+// 🌟 核心修復：強制重置座位輪次
 function startGame(roomId) {
     let state = rooms[roomId];
     state.status = 'playing';
+    state.currentTurnIndex = 0; // 🚀 每次開局，保證從第 1 個人開始發牌！
     initDeck(roomId);
     clearAllTimers(roomId);
     
@@ -222,7 +229,7 @@ io.on('connection', (socket) => {
         
         if (offlineIdx !== -1) {
             playerObj = state.offlinePlayers.splice(offlineIdx, 1)[0];
-            playerObj.isHost = false; 
+            // 拔除 playerObj.isHost = false; 讓室長斷線重連還是室長
             state.message = `🔥 ${playerName} 帶著籌碼重返牌桌！`;
         } else {
             state.message = `👋 ${playerName} 進入了包廂`;
@@ -256,7 +263,6 @@ io.on('connection', (socket) => {
         if (!roomId || !rooms[roomId]) return;
         let state = rooms[roomId];
 
-        // 🚀 核心修復：認憑證，不認座位！ 🚀
         let player = state.players[socket.id];
         if (!player || !player.isHost) return;
         
@@ -273,20 +279,21 @@ io.on('connection', (socket) => {
         }
     });
 
+    // 🚀 加上嚴格且明確的報錯系統
     socket.on('force_start', () => {
         let roomId = socket.roomId;
-        if (!roomId || !rooms[roomId]) return;
+        if (!roomId || !rooms[roomId]) return socket.emit('error_msg', "伺服器找不到你的房間資料！");
         let state = rooms[roomId];
 
-        // 🚀 核心修復：只要你是室長，且遊戲沒在進行，隨時都能強制開砸！ 🚀
         let player = state.players[socket.id];
-        if (!player || !player.isHost) return;
-        if (state.status === 'playing') return; 
+        if (!player) return socket.emit('error_msg', "找不到你的玩家資料！");
+        if (!player.isHost) return socket.emit('error_msg', "你不是室長，無權強制開局！");
+        if (state.status === 'playing') return socket.emit('error_msg', "遊戲已經在進行中囉！"); 
         
         if (state.playerOrder.length >= 2) {
             startGame(roomId);
         } else {
-            socket.emit('error_msg', "開局至少需要 2 名玩家！");
+            socket.emit('error_msg', "人數不夠，開局至少需要 2 名玩家！");
         }
     });
 
@@ -295,7 +302,6 @@ io.on('connection', (socket) => {
         if (!roomId || !rooms[roomId]) return;
         let state = rooms[roomId];
 
-        // 🚀 核心修復：認憑證，不認座位！ 🚀
         let player = state.players[socket.id];
         if (!player || !player.isHost) return;
         
@@ -305,6 +311,7 @@ io.on('connection', (socket) => {
         state.tableCards = { c1: null, c2: null, c3: null };
         state.offlinePlayers = []; 
         state.isActionLocked = false;
+        state.currentTurnIndex = 0; // 🌟 這裡也要歸零
         
         state.playerOrder = Object.keys(state.players);
         for(let id in state.players) state.players[id].isWaiting = false;
@@ -321,7 +328,6 @@ io.on('connection', (socket) => {
         if (!roomId || !rooms[roomId]) return;
         let state = rooms[roomId];
 
-        // 🚀 核心修復：認憑證，不認座位！ 🚀
         let player = state.players[socket.id];
         if (!player || !player.isHost) return;
         
@@ -352,6 +358,7 @@ io.on('connection', (socket) => {
         state.status = 'waiting_for_host';
         state.tableCards = { c1: null, c2: null, c3: null };
         state.offlinePlayers = []; 
+        state.currentTurnIndex = 0; // 🌟 這裡也要歸零
         
         state.playerOrder = Object.keys(state.players);
         for (let id in state.players) {
