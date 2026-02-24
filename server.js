@@ -256,7 +256,9 @@ io.on('connection', (socket) => {
         if (!roomId || !rooms[roomId]) return;
         let state = rooms[roomId];
 
-        if (socket.id !== state.playerOrder[0]) return;
+        // 🚀 核心修復：認憑證，不認座位！ 🚀
+        let player = state.players[socket.id];
+        if (!player || !player.isHost) return;
         
         state.poolPerPlayer = data.poolPerPlayer; 
         state.passFee = data.passFee || 0;
@@ -276,8 +278,9 @@ io.on('connection', (socket) => {
         if (!roomId || !rooms[roomId]) return;
         let state = rooms[roomId];
 
-        // 🚀 核心修復：拔除嚴苛的狀態限制，只要你是室長且沒在玩，隨時可開局！ 🚀
-        if (socket.id !== state.playerOrder[0]) return;
+        // 🚀 核心修復：只要你是室長，且遊戲沒在進行，隨時都能強制開砸！ 🚀
+        let player = state.players[socket.id];
+        if (!player || !player.isHost) return;
         if (state.status === 'playing') return; 
         
         if (state.playerOrder.length >= 2) {
@@ -292,7 +295,9 @@ io.on('connection', (socket) => {
         if (!roomId || !rooms[roomId]) return;
         let state = rooms[roomId];
 
-        if (socket.id !== state.playerOrder[0]) return; 
+        // 🚀 核心修復：認憑證，不認座位！ 🚀
+        let player = state.players[socket.id];
+        if (!player || !player.isHost) return;
         
         clearAllTimers(roomId); 
         state.pool = 0;
@@ -316,7 +321,10 @@ io.on('connection', (socket) => {
         if (!roomId || !rooms[roomId]) return;
         let state = rooms[roomId];
 
-        if (socket.id !== state.playerOrder[0]) return; 
+        // 🚀 核心修復：認憑證，不認座位！ 🚀
+        let player = state.players[socket.id];
+        if (!player || !player.isHost) return;
+        
         clearAllTimers(roomId);
         state.status = 'game_over';
         state.isActionLocked = true;
