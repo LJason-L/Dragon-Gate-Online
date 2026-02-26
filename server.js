@@ -10,8 +10,6 @@ app.use(express.static('public'));
 
 let rooms = {}; 
 let roomTimers = {}; 
-
-// 🚀 就是這裡！撲克牌的花色靈魂強勢回歸，伺服器再也不會當機了！ 🚀
 const suits = ['♠', '♥', '♦', '♣'];
 
 function generateRoomId() {
@@ -94,6 +92,7 @@ function executeDeal(roomId) {
     let gap = c2.value - c1.value;
 
     if (gap === 1) {
+        // 🚀 核心修復：拿到緊鄰牌時，只發送 cards_dealt 讓畫面翻牌，絕對不發送 shoot_result 搗亂！
         state.isActionLocked = true; 
         let fee = state.passFee > 0 ? state.passFee : 10;
         if (fee > state.pool) fee = state.pool;
@@ -101,14 +100,14 @@ function executeDeal(roomId) {
         state.pool += fee;
         player.pnl -= fee;
 
-        state.message = `🥶 拿到緊鄰牌 [${c1.value}, ${c2.value}] 無牌可打！${pName} 強制賠付過路費 $${fee}`;
+        state.message = `🥶 拿到緊鄰牌 [${c1.value}, ${c2.value}] 無門可打！${pName} 賠付過路費 $${fee}`;
         state.messageColor = "#94a3b8";
 
-        io.to(roomId).emit('cards_dealt', state);
-        io.to(roomId).emit('shoot_result', { state: state, resultType: 'pass' });
+        io.to(roomId).emit('cards_dealt', state); // 只讓前端優雅地翻開兩張牌
 
         clearAllTimers(roomId);
-        roomTimers[roomId] = setTimeout(() => { nextTurn(roomId); }, 3000);
+        // 停留 3.5 秒讓大家看清楚他有多衰，然後順滑進入下一位
+        roomTimers[roomId] = setTimeout(() => { nextTurn(roomId); }, 3500);
         return; 
     }
 

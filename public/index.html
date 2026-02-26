@@ -571,6 +571,9 @@
             document.getElementById('poolAmount').innerText = state.pool;
             document.getElementById('cardsLeft').innerText = state.deck.length;
 
+            // 🌟 極其重要：先隱藏面板，防止干擾上一把殘留的畫面
+            document.getElementById('actionArea').style.display = 'none';
+
             ['card1', 'card2', 'card3'].forEach(id => document.getElementById(id).classList.remove('flipped'));
             
             setTimeout(() => {
@@ -592,7 +595,8 @@
                 msgEl.innerText = state.message;
                 msgEl.style.color = state.messageColor;
 
-                if (isMyTurn) {
+                // 🌟 核心防呆：只有在「自己的回合」且「無Action鎖（不是拿到相連牌）」時，才顯示按鈕！
+                if (isMyTurn && !state.isActionLocked) { 
                     let minBet = Math.min(state.pool, currentPassFee > 0 ? currentPassFee : 10);
                     let betInput = document.getElementById('betAmount');
                     betInput.value = ''; betInput.min = minBet; betInput.placeholder = `最低 $${minBet}...`;
