@@ -11,6 +11,9 @@ app.use(express.static('public'));
 let rooms = {}; 
 let roomTimers = {}; 
 
+// 🚀 就是這裡！撲克牌的花色靈魂強勢回歸，伺服器再也不會當機了！ 🚀
+const suits = ['♠', '♥', '♦', '♣'];
+
 function generateRoomId() {
     let result = '';
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -79,7 +82,6 @@ function executeDeal(roomId) {
     state.isPair = (c1.value === c2.value);
     state.isActionLocked = false; 
 
-    // 🚀 預防無聲當機：如果找不到人，強制重置輪次
     if (state.currentTurnIndex >= state.playerOrder.length) {
         state.currentTurnIndex = 0;
     }
@@ -167,11 +169,10 @@ function nextTurn(roomId) {
     dealInitialCardsForCurrentTurn(roomId);
 }
 
-// 🌟 核心修復：強制重置座位輪次
 function startGame(roomId) {
     let state = rooms[roomId];
     state.status = 'playing';
-    state.currentTurnIndex = 0; // 🚀 每次開局，保證從第 1 個人開始發牌！
+    state.currentTurnIndex = 0; 
     initDeck(roomId);
     clearAllTimers(roomId);
     
@@ -229,7 +230,6 @@ io.on('connection', (socket) => {
         
         if (offlineIdx !== -1) {
             playerObj = state.offlinePlayers.splice(offlineIdx, 1)[0];
-            // 拔除 playerObj.isHost = false; 讓室長斷線重連還是室長
             state.message = `🔥 ${playerName} 帶著籌碼重返牌桌！`;
         } else {
             state.message = `👋 ${playerName} 進入了包廂`;
@@ -279,7 +279,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 🚀 加上嚴格且明確的報錯系統
     socket.on('force_start', () => {
         let roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return socket.emit('error_msg', "伺服器找不到你的房間資料！");
@@ -311,7 +310,7 @@ io.on('connection', (socket) => {
         state.tableCards = { c1: null, c2: null, c3: null };
         state.offlinePlayers = []; 
         state.isActionLocked = false;
-        state.currentTurnIndex = 0; // 🌟 這裡也要歸零
+        state.currentTurnIndex = 0; 
         
         state.playerOrder = Object.keys(state.players);
         for(let id in state.players) state.players[id].isWaiting = false;
@@ -358,7 +357,7 @@ io.on('connection', (socket) => {
         state.status = 'waiting_for_host';
         state.tableCards = { c1: null, c2: null, c3: null };
         state.offlinePlayers = []; 
-        state.currentTurnIndex = 0; // 🌟 這裡也要歸零
+        state.currentTurnIndex = 0; 
         
         state.playerOrder = Object.keys(state.players);
         for (let id in state.players) {
